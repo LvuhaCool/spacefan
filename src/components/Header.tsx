@@ -1,7 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Header() {
   const location = useLocation();
+  const { logout } = useAuth();
 
   const navItems = [
     { path: '/', label: 'Новости' },
@@ -14,24 +16,37 @@ export default function Header() {
         <span className="text-sm font-semibold text-stone-400 tracking-widest uppercase select-none">
           Spacefan
         </span>
-        <nav className="flex items-center gap-1">
-          {navItems.map(({ path, label }) => {
-            const active = location.pathname === path;
-            return (
-              <Link
-                key={path}
-                to={path}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  active
-                    ? 'bg-stone-900 text-white'
-                    : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
-                }`}
-              >
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+
+        <div className="flex items-center gap-1">
+          <nav className="flex items-center gap-1">
+            {navItems.map(({ path, label }) => {
+              const active = location.pathname === path;
+              return (
+                <Link
+                  key={path}
+                  to={path}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? 'bg-stone-900 text-white'
+                      : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
+                  }`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="w-px h-4 bg-stone-200 mx-1" />
+
+          <button
+            onClick={logout}
+            title="Выйти"
+            className="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+          >
+            Выйти
+          </button>
+        </div>
       </div>
     </header>
   );

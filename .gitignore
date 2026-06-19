@@ -1,3 +1,7 @@
+# Local env and database — never commit these
+.env
+server/data.db
+
 # Logs
 logs
 *.log
