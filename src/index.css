@@ -16,3 +16,68 @@ body {
 #root {
   min-height: 100svh;
 }
+
+/* Image blocks inside the editor */
+[data-image-block] {
+  position: relative;
+  margin: 1.25rem 0;
+  cursor: default;
+}
+
+[data-image-block] img {
+  width: 100%;
+  border-radius: 0.75rem;
+  display: block;
+  pointer-events: none;
+}
+
+[data-image-block] figcaption {
+  text-align: center;
+  font-size: 0.875rem;
+  color: #a8a29e;
+  margin-top: 0.5rem;
+  outline: none;
+  min-height: 1.25rem;
+}
+
+[data-image-block] figcaption:empty::before {
+  content: attr(data-placeholder);
+  color: #d4d4d4;
+  pointer-events: none;
+}
+
+[data-image-block] .drag-handle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(6px);
+  border-radius: 6px;
+  padding: 4px 7px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-size: 13px;
+  color: #78716c;
+  line-height: 1;
+  user-select: none;
+  z-index: 2;
+}
+
+[data-image-block]:hover .drag-handle {
+  opacity: 1;
+}
+
+[data-image-block].is-dragging {
+  opacity: 0.35;
+}
+
+/* Drop indicator */
+[data-drop-before]::before {
+  content: '';
+  display: block;
+  height: 2px;
+  background: #3b82f6;
+  border-radius: 2px;
+  margin-bottom: 6px;
+}

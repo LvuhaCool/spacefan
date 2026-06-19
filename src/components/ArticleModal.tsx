@@ -4,17 +4,10 @@ import type { Article } from '../data/articles';
 interface Props {
   article: Article | null;
   onClose: () => void;
+  onWriteAbout: (title: string) => void;
 }
 
-const fakeContent = `Искусственный интеллект стремительно меняет то, как мы создаём и потребляем информацию. Ещё несколько лет назад написание новостного материала требовало часов работы журналиста — сбора фактов, структурирования, редактуры. Сегодня языковые модели способны сгенерировать качественный черновик за секунды.
-
-Это не означает конца журналистики. Скорее, происходит перераспределение ролей: AI берёт на себя рутинные задачи — генерацию структуры, первичный текст, SEO-оптимизацию, — а человек концентрируется на том, что машине пока недоступно: источниках, контексте, этике и живом голосе.
-
-Исследование Reuters Institute показало: 72% редакций, внедривших AI-инструменты, отметили рост производительности при сохранении качества. При этом 85% журналистов утверждают, что не ощущают угрозы своей занятости — они просто работают иначе.
-
-Ключевой вопрос не «заменит ли AI журналиста», а «как лучше выстроить совместную работу». Те редакции, которые найдут правильный баланс, получат конкурентное преимущество на годы вперёд.`;
-
-export default function ArticleModal({ article, onClose }: Props) {
+export default function ArticleModal({ article, onClose, onWriteAbout }: Props) {
   useEffect(() => {
     if (!article) return;
     const handler = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -67,14 +60,17 @@ export default function ArticleModal({ article, onClose }: Props) {
           </p>
 
           <div className="text-[15px] text-stone-700 leading-relaxed space-y-4">
-            {fakeContent.split('\n\n').map((para, i) => (
+            {article.content.split('\n\n').map((para, i) => (
               <p key={i}>{para}</p>
             ))}
           </div>
         </div>
 
         <div className="flex-shrink-0 p-4 border-t border-stone-100 flex gap-2">
-          <button className="flex-1 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors">
+          <button
+            onClick={() => onWriteAbout(article.title)}
+            className="flex-1 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors"
+          >
             Написать статью на эту тему
           </button>
           <button

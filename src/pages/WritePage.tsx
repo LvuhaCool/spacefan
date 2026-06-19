@@ -1,43 +1,25 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import DraftPanel from '../components/DraftPanel';
+import { saveDraft, getDrafts, deleteDraft, getDraft } from '../lib/storage';
+import type { Draft } from '../lib/storage';
 
-interface AttachedImage {
-  id: string;
-  url: string;
-  name: string;
-}
+type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
-type FormatCommand =
-  | 'bold'
-  | 'italic'
-  | 'underline'
-  | 'strikeThrough'
-  | 'insertUnorderedList'
-  | 'insertOrderedList'
-  | 'formatBlock';
-
-function ToolbarButton({
-  onClick,
+function ToolBtn({
+  onMouseDown,
   title,
-  active,
   children,
 }: {
-  onClick: () => void;
+  onMouseDown: (e: React.MouseEvent) => void;
   title: string;
-  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
-      onMouseDown={(e) => {
-        e.preventDefault();
-        onClick();
-      }}
+      onMouseDown={onMouseDown}
       title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors ${
-        active
-          ? 'bg-stone-900 text-white'
-          : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
-      }`}
+      className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-stone-500 hover:bg-stone-200/60 hover:text-stone-900 transition-colors select-none"
     >
       {children}
     </button>
@@ -46,90 +28,325 @@ function ToolbarButton({
 
 export default function WritePage() {
   const editorRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [images, setImages] = useState<AttachedImage[]>([]);
-  const [title, setTitle] = useState('');
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const draggingFigRef = useRef<HTMLElement | null>(null);
+  const skipObserverRef = useRef(false);
 
-  const exec = useCallback((cmd: FormatCommand, value?: string) => {
-    document.execCommand(cmd, false, value);
-    editorRef.current?.focus();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID());
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>(() => getDrafts());
+
+  // ── Auto-save ────────────────────────────────────────────────
+  const doSave = useCallback(
+    (id: string) => {
+      setSaveStatus('saving');
+      const existing = getDraft(id);
+      saveDraft({
+        id,
+        title: titleRef.current?.value.trim() || 'Без названия',
+        content: editorRef.current?.innerHTML ?? '',
+        updatedAt: Date.now(),
+        createdAt: existing?.createdAt ?? Date.now(),
+      });
+      setDrafts(getDrafts());
+      setSaveStatus('saved');
+    },
+    []
+  );
+
+  const scheduleAutoSave = useCallback(() => {
+    setSaveStatus('unsaved');
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => doSave(draftId), 700);
+  }, [draftId, doSave]);
+
+  // MutationObserver on the editor
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const obs = new MutationObserver(() => {
+      if (skipObserverRef.current) return;
+      scheduleAutoSave();
+    });
+    obs.observe(editor, { childList: true, subtree: true, characterData: true });
+    return () => obs.disconnect();
+  }, [scheduleAutoSave]);
+
+  // ── Load from navigation state (write-about-this) ────────────
+  useEffect(() => {
+    const state = location.state as { fromTitle?: string } | null;
+    if (!state?.fromTitle) return;
+    const newId = crypto.randomUUID();
+    setDraftId(newId);
+    if (titleRef.current) titleRef.current.value = state.fromTitle;
+    if (editorRef.current) editorRef.current.innerHTML = '';
+    setSaveStatus('unsaved');
+    navigate('/write', { replace: true, state: null });
+  }, [location.state, navigate]);
+
+  // ── Draft management ─────────────────────────────────────────
+  const loadDraft = useCallback((draft: Draft) => {
+    skipObserverRef.current = true;
+    setDraftId(draft.id);
+    if (titleRef.current) titleRef.current.value = draft.title === 'Без названия' ? '' : draft.title;
+    if (editorRef.current) editorRef.current.innerHTML = draft.content;
+    setPanelOpen(false);
+    setSaveStatus('saved');
+    setTimeout(() => { skipObserverRef.current = false; }, 50);
   }, []);
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    files.forEach((file) => {
-      const url = URL.createObjectURL(file);
-      setImages((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), url, name: file.name },
-      ]);
-    });
+  const newDraft = useCallback(() => {
+    skipObserverRef.current = true;
+    const id = crypto.randomUUID();
+    setDraftId(id);
+    if (titleRef.current) titleRef.current.value = '';
+    if (editorRef.current) editorRef.current.innerHTML = '';
+    setPanelOpen(false);
+    setSaveStatus('saved');
+    setTimeout(() => { skipObserverRef.current = false; }, 50);
+  }, []);
+
+  const handleDeleteDraft = useCallback(
+    (id: string) => {
+      deleteDraft(id);
+      const remaining = getDrafts();
+      setDrafts(remaining);
+      if (id === draftId) newDraft();
+    },
+    [draftId, newDraft]
+  );
+
+  const openPanel = () => {
+    setDrafts(getDrafts());
+    setPanelOpen(true);
+  };
+
+  // ── Drag-and-drop for image blocks ───────────────────────────
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const clearDropIndicators = () => {
+      editor.querySelectorAll('[data-drop-before]').forEach((el) =>
+        el.removeAttribute('data-drop-before')
+      );
+    };
+
+    const getDropTarget = (clientY: number): Element | null => {
+      const children = Array.from(editor.children).filter(
+        (c) => c !== draggingFigRef.current
+      );
+      for (const child of children) {
+        const rect = child.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) return child;
+      }
+      return null;
+    };
+
+    const onDragStart = (e: DragEvent) => {
+      const fig = (e.target as HTMLElement).closest<HTMLElement>('[data-image-block]');
+      if (!fig) return;
+      draggingFigRef.current = fig;
+      fig.classList.add('is-dragging');
+      e.dataTransfer!.effectAllowed = 'move';
+    };
+
+    const onDragEnd = () => {
+      draggingFigRef.current?.classList.remove('is-dragging');
+      draggingFigRef.current = null;
+      clearDropIndicators();
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      if (!draggingFigRef.current) return;
+      e.preventDefault();
+      clearDropIndicators();
+      const target = getDropTarget(e.clientY);
+      if (target) target.setAttribute('data-drop-before', '');
+    };
+
+    const onDrop = (e: DragEvent) => {
+      if (!draggingFigRef.current) return;
+      e.preventDefault();
+      clearDropIndicators();
+      const insertBefore = getDropTarget(e.clientY);
+      if (insertBefore) {
+        editor.insertBefore(draggingFigRef.current, insertBefore);
+      } else {
+        editor.appendChild(draggingFigRef.current);
+      }
+      draggingFigRef.current.classList.remove('is-dragging');
+      draggingFigRef.current = null;
+      scheduleAutoSave();
+    };
+
+    editor.addEventListener('dragstart', onDragStart);
+    editor.addEventListener('dragend', onDragEnd);
+    editor.addEventListener('dragover', onDragOver);
+    editor.addEventListener('drop', onDrop);
+    return () => {
+      editor.removeEventListener('dragstart', onDragStart);
+      editor.removeEventListener('dragend', onDragEnd);
+      editor.removeEventListener('dragover', onDragOver);
+      editor.removeEventListener('drop', onDrop);
+    };
+  }, [scheduleAutoSave]);
+
+  // ── Image insertion ──────────────────────────────────────────
+  const insertImage = (file: File) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const url = URL.createObjectURL(file);
+
+    const figure = document.createElement('figure');
+    figure.setAttribute('data-image-block', '');
+    figure.setAttribute('contenteditable', 'false');
+    figure.setAttribute('draggable', 'true');
+
+    const handle = document.createElement('div');
+    handle.className = 'drag-handle';
+    handle.textContent = '⠿';
+
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = file.name;
+
+    const caption = document.createElement('figcaption');
+    caption.setAttribute('contenteditable', 'true');
+    caption.setAttribute('data-placeholder', 'Подпись к фото...');
+
+    figure.append(handle, img, caption);
+
+    // Insert after the current block-level cursor position
+    const sel = window.getSelection();
+    let inserted = false;
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+      let node: Node | null = sel.anchorNode;
+      while (node && node.parentNode !== editor) node = node.parentNode;
+      if (node && node.parentNode === editor) {
+        (node as Element).after(figure);
+        inserted = true;
+      }
+    }
+    if (!inserted) editor.appendChild(figure);
+
+    // Ensure a paragraph after the figure
+    if (!figure.nextElementSibling) {
+      const p = document.createElement('p');
+      p.innerHTML = '<br>';
+      figure.after(p);
+    }
+
+    scheduleAutoSave();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    Array.from(e.target.files ?? []).forEach(insertImage);
     e.target.value = '';
   };
 
-  const removeImage = (id: string) => {
-    setImages((prev) => {
-      const img = prev.find((i) => i.id === id);
-      if (img) URL.revokeObjectURL(img.url);
-      return prev.filter((i) => i.id !== id);
-    });
-  };
-
-  const insertImageIntoEditor = (url: string) => {
-    const img = `<img src="${url}" alt="" class="max-w-full rounded-xl my-2" />`;
-    document.execCommand('insertHTML', false, img);
+  // ── execCommand wrapper ──────────────────────────────────────
+  const exec = (cmd: string, val?: string) => {
+    document.execCommand(cmd, false, val);
     editorRef.current?.focus();
   };
 
-  return (
-    <main className="max-w-3xl mx-auto px-4 py-6">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-stone-900 mb-1">Написать статью</h1>
-        <p className="text-sm text-stone-400">Черновик · не сохранён</p>
-      </div>
+  const prevent = (e: React.MouseEvent) => e.preventDefault();
 
-      <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
-        {/* Title */}
-        <div className="px-5 pt-5 pb-2 border-b border-stone-100">
-          <input
-            type="text"
-            placeholder="Заголовок статьи"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full text-xl font-bold text-stone-900 placeholder:text-stone-300 outline-none bg-transparent"
-          />
+  // ── Save status label ────────────────────────────────────────
+  const statusLabel =
+    saveStatus === 'saving'
+      ? 'Сохранение...'
+      : saveStatus === 'unsaved'
+      ? '●'
+      : 'Сохранено';
+
+  return (
+    <>
+      <main className="max-w-3xl mx-auto px-4 pb-24">
+        {/* Top bar */}
+        <div className="flex items-center justify-between py-4">
+          <button
+            onClick={openPanel}
+            className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-stone-900 transition-colors"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4 flex-shrink-0">
+              <rect x="2" y="2" width="12" height="2" rx="1" />
+              <rect x="2" y="7" width="9" height="2" rx="1" />
+              <rect x="2" y="12" width="6" height="2" rx="1" />
+            </svg>
+            Мои статьи
+            {drafts.length > 0 && (
+              <span className="text-stone-300">({drafts.length})</span>
+            )}
+          </button>
+
+          <div className="flex items-center gap-3">
+            <span
+              className={`text-xs transition-colors ${
+                saveStatus === 'unsaved' ? 'text-amber-400' : 'text-stone-300'
+              }`}
+            >
+              {statusLabel}
+            </span>
+            <button
+              onClick={newDraft}
+              className="text-sm text-stone-400 hover:text-stone-900 transition-colors"
+            >
+              + Новая
+            </button>
+          </div>
         </div>
 
+        {/* Title */}
+        <input
+          ref={titleRef}
+          type="text"
+          placeholder="Заголовок"
+          onChange={scheduleAutoSave}
+          className="w-full text-3xl sm:text-4xl font-bold text-stone-900 placeholder:text-stone-200 outline-none bg-transparent mb-6 leading-tight"
+        />
+
         {/* Toolbar */}
-        <div className="px-3 py-2 border-b border-stone-100 flex items-center gap-0.5 flex-wrap">
-          <ToolbarButton onClick={() => exec('bold')} title="Жирный (Ctrl+B)">
-            <strong>B</strong>
-          </ToolbarButton>
-          <ToolbarButton onClick={() => exec('italic')} title="Курсив (Ctrl+I)">
+        <div className="flex items-center gap-0.5 flex-wrap pb-4 mb-2 border-b border-stone-100">
+          <ToolBtn onMouseDown={(e) => { prevent(e); exec('bold'); }} title="Жирный">
+            <strong className="font-bold">B</strong>
+          </ToolBtn>
+          <ToolBtn onMouseDown={(e) => { prevent(e); exec('italic'); }} title="Курсив">
             <em>I</em>
-          </ToolbarButton>
-          <ToolbarButton onClick={() => exec('underline')} title="Подчёркнутый (Ctrl+U)">
+          </ToolBtn>
+          <ToolBtn onMouseDown={(e) => { prevent(e); exec('underline'); }} title="Подчёркнутый">
             <span className="underline">U</span>
-          </ToolbarButton>
-          <ToolbarButton onClick={() => exec('strikeThrough')} title="Зачёркнутый">
+          </ToolBtn>
+          <ToolBtn onMouseDown={(e) => { prevent(e); exec('strikeThrough'); }} title="Зачёркнутый">
             <span className="line-through">S</span>
-          </ToolbarButton>
+          </ToolBtn>
 
-          <div className="w-px h-5 bg-stone-200 mx-1" />
+          <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
-          <ToolbarButton onClick={() => exec('formatBlock', 'H2')} title="Заголовок H2">
+          <ToolBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H2'); }} title="Заголовок H2">
             <span className="text-xs font-bold">H2</span>
-          </ToolbarButton>
-          <ToolbarButton onClick={() => exec('formatBlock', 'H3')} title="Заголовок H3">
+          </ToolBtn>
+          <ToolBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H3'); }} title="Заголовок H3">
             <span className="text-xs font-bold">H3</span>
-          </ToolbarButton>
-          <ToolbarButton onClick={() => exec('formatBlock', 'P')} title="Обычный текст">
+          </ToolBtn>
+          <ToolBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'p'); }} title="Обычный текст">
             <span className="text-xs">P</span>
-          </ToolbarButton>
+          </ToolBtn>
 
-          <div className="w-px h-5 bg-stone-200 mx-1" />
+          <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
-          <ToolbarButton onClick={() => exec('insertUnorderedList')} title="Маркированный список">
+          <ToolBtn
+            onMouseDown={(e) => { prevent(e); exec('insertUnorderedList'); }}
+            title="Маркированный список"
+          >
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
               <circle cx="2" cy="4" r="1.5" />
               <rect x="5" y="3" width="9" height="2" rx="1" />
@@ -138,8 +355,11 @@ export default function WritePage() {
               <circle cx="2" cy="12" r="1.5" />
               <rect x="5" y="11" width="9" height="2" rx="1" />
             </svg>
-          </ToolbarButton>
-          <ToolbarButton onClick={() => exec('insertOrderedList')} title="Нумерованный список">
+          </ToolBtn>
+          <ToolBtn
+            onMouseDown={(e) => { prevent(e); exec('insertOrderedList'); }}
+            title="Нумерованный список"
+          >
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
               <text x="0" y="5" fontSize="5" fontFamily="monospace">1.</text>
               <rect x="5" y="3" width="9" height="2" rx="1" />
@@ -148,96 +368,74 @@ export default function WritePage() {
               <text x="0" y="13" fontSize="5" fontFamily="monospace">3.</text>
               <rect x="5" y="11" width="9" height="2" rx="1" />
             </svg>
-          </ToolbarButton>
+          </ToolBtn>
 
-          <div className="w-px h-5 bg-stone-200 mx-1" />
+          <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
-          <ToolbarButton
-            onClick={() => fileInputRef.current?.click()}
-            title="Прикрепить изображение"
+          <ToolBtn
+            onMouseDown={(e) => { prevent(e); fileInputRef.current?.click(); }}
+            title="Вставить изображение"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
               <rect x="1" y="3" width="14" height="10" rx="2" />
               <circle cx="5.5" cy="6.5" r="1.5" />
               <path d="M1 10l3.5-3 3 3 2.5-2.5 4 3.5" strokeLinejoin="round" />
             </svg>
-          </ToolbarButton>
+          </ToolBtn>
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
             multiple
             className="hidden"
-            onChange={handleImageChange}
+            onChange={handleFileChange}
           />
         </div>
 
-        {/* Editor */}
+        {/* Editor canvas */}
         <div
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
           data-placeholder="Начните писать..."
-          onInput={() => {}}
-          className="min-h-64 px-5 py-4 text-[15px] text-stone-800 leading-relaxed outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-stone-900 [&_h2]:mt-4 [&_h2]:mb-1 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-stone-900 [&_h3]:mt-3 [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5"
+          className="
+            min-h-[65vh] outline-none
+            text-[16px] leading-relaxed text-stone-800
+            empty:before:content-[attr(data-placeholder)] empty:before:text-stone-200 empty:before:pointer-events-none
+            [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-stone-900 [&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:leading-tight
+            [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-stone-900 [&_h3]:mt-4 [&_h3]:mb-1
+            [&_p]:mb-3
+            [&_ul]:list-disc [&_ul]:ml-5 [&_ul]:mb-3
+            [&_ol]:list-decimal [&_ol]:ml-5 [&_ol]:mb-3
+          "
         />
+      </main>
 
-        {/* Attached images */}
-        {images.length > 0 && (
-          <div className="px-5 pb-4 border-t border-stone-100 pt-3">
-            <p className="text-xs text-stone-400 mb-2 uppercase tracking-wide">
-              Прикреплённые изображения
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {images.map((img) => (
-                <div key={img.id} className="relative group">
-                  <img
-                    src={img.url}
-                    alt={img.name}
-                    className="w-20 h-20 object-cover rounded-xl border border-stone-200"
-                  />
-                  <button
-                    onClick={() => insertImageIntoEditor(img.url)}
-                    title="Вставить в текст"
-                    className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-medium"
-                  >
-                    Вставить
-                  </button>
-                  <button
-                    onClick={() => removeImage(img.id)}
-                    title="Удалить"
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-stone-900 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-20 h-20 rounded-xl border-2 border-dashed border-stone-200 flex items-center justify-center text-stone-300 hover:border-stone-400 hover:text-stone-400 transition-colors text-2xl"
-              >
-                +
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Footer actions */}
-        <div className="px-5 py-4 border-t border-stone-100 flex gap-2 flex-wrap">
-          <button className="flex-1 min-w-32 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors">
+      {/* Fixed footer */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#f8f7f5]/90 backdrop-blur-sm border-t border-stone-100 z-10">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex gap-2">
+          <button className="flex-1 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors">
             Опубликовать
           </button>
-          <button className="px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors">
+          <button className="px-4 py-2.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors">
             Telegram
           </button>
-          <button className="px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors">
+          <button className="px-4 py-2.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors">
             Дзен
-          </button>
-          <button className="px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors">
-            Сохранить черновик
           </button>
         </div>
       </div>
-    </main>
+
+      {panelOpen && (
+        <DraftPanel
+          drafts={drafts}
+          currentId={draftId}
+          onLoad={loadDraft}
+          onDelete={handleDeleteDraft}
+          onNew={newDraft}
+          onClose={() => setPanelOpen(false)}
+        />
+      )}
+    </>
   );
 }
