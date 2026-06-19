@@ -22,7 +22,7 @@ app.use('/api/auth', authRouter);
 if (process.env.NODE_ENV === 'production') {
   const dist = join(__dirname, '../dist');
   app.use(express.static(dist));
-  app.get('*', (_req, res) => res.sendFile(join(dist, 'index.html')));
+  app.get(/(.*)/, (_req, res) => res.sendFile(join(dist, 'index.html')));
 }
 
 app.listen(PORT, () => console.log(`Spacefan server on :${PORT}`));
