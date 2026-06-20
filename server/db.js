@@ -28,6 +28,19 @@ db.exec(`
     ip           TEXT,
     attempted_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS news_feed (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL,
+    excerpt     TEXT    NOT NULL,
+    content     TEXT    NOT NULL,
+    image_url   TEXT    NOT NULL DEFAULT '',
+    category    TEXT    NOT NULL DEFAULT 'Космос',
+    event_date  TEXT    NOT NULL DEFAULT '',
+    read_time   INTEGER NOT NULL DEFAULT 3,
+    source_url  TEXT    NOT NULL DEFAULT '',
+    fetched_at  INTEGER NOT NULL
+  );
 `);
 
 export default db;
