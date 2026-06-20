@@ -2,6 +2,7 @@ import db from './db.js';
 
 const SPACEFLIGHT_URL  = 'https://api.spaceflightnewsapi.net/v4/articles/?limit=20&ordering=-published_at';
 const LL2_URL          = 'https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=5&ordering=net';
+const LL2_EVENTS_URL   = 'https://ll.thespacedevs.com/2.3.0/events/upcoming/?limit=10&ordering=date';
 const REFRESH_INTERVAL = 30 * 60 * 1000;
 
 const MONTHS_RU = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
@@ -120,10 +121,52 @@ async function refreshLaunches() {
   console.log(`[launches] Updated — ${list.length} launches`);
 }
 
+// ── Events (EVA, Docking, Undocking — Launch Library 2) ──────────────
+
+async function refreshEvents() {
+  console.log('[events] Fetching upcoming events from LL2...');
+  let raw;
+  try {
+    const res = await fetch(LL2_EVENTS_URL, { headers: { 'User-Agent': 'Spacefan/1.0' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    raw = await res.json();
+  } catch (err) {
+    console.error('[events] LL2 error:', err.message);
+    return;
+  }
+
+  const list = raw.results ?? [];
+  if (list.length === 0) return;
+
+  const insert = db.prepare(`
+    INSERT OR REPLACE INTO space_events
+      (id, name, type_name, description, date, date_formatted, location, image_url, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const now = Date.now();
+  db.transaction(() => {
+    db.prepare('DELETE FROM space_events').run();
+    for (const e of list) {
+      insert.run(
+        e.id,
+        e.name              ?? '',
+        e.type?.name        ?? '',
+        e.description       ?? '',
+        e.date              ?? '',
+        formatNet(e.date),
+        e.location          ?? '',
+        e.feature_image     ?? '',
+        now,
+      );
+    }
+  })();
+  console.log(`[events] Updated — ${list.length} events`);
+}
+
 // ── Public ────────────────────────────────────────────────────────────
 
 export async function refreshFeed() {
-  await Promise.allSettled([refreshNews(), refreshLaunches()]);
+  await Promise.allSettled([refreshNews(), refreshLaunches(), refreshEvents()]);
 }
 
 export function startNewsJob() {

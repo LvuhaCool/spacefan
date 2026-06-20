@@ -57,6 +57,18 @@ db.exec(`
     landing_info  TEXT    NOT NULL DEFAULT '[]',
     fetched_at    INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS space_events (
+    id             INTEGER PRIMARY KEY,
+    name           TEXT    NOT NULL DEFAULT '',
+    type_name      TEXT    NOT NULL DEFAULT '',
+    description    TEXT    NOT NULL DEFAULT '',
+    date           TEXT    NOT NULL DEFAULT '',
+    date_formatted TEXT    NOT NULL DEFAULT '',
+    location       TEXT    NOT NULL DEFAULT '',
+    image_url      TEXT    NOT NULL DEFAULT '',
+    fetched_at     INTEGER NOT NULL
+  );
 `);
 
 // ── Migrations for existing installs ──────────────────────────────────

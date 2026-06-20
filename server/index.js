@@ -52,6 +52,20 @@ app.get('/api/launches', (_req, res) => {
   })));
 });
 
+app.get('/api/events', (_req, res) => {
+  const rows = db.prepare('SELECT * FROM space_events ORDER BY date ASC').all();
+  res.json(rows.map(r => ({
+    id:            r.id,
+    name:          r.name,
+    typeName:      r.type_name,
+    description:   r.description,
+    date:          r.date,
+    dateFormatted: r.date_formatted,
+    location:      r.location,
+    imageUrl:      r.image_url,
+  })));
+});
+
 app.delete('/api/news/:id', (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });

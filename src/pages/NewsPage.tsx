@@ -4,13 +4,17 @@ import ArticleCard from '../components/ArticleCard';
 import ArticleModal from '../components/ArticleModal';
 import LaunchStrip from '../components/LaunchStrip';
 import LaunchModal, { type Launch } from '../components/LaunchModal';
+import EventStrip from '../components/EventStrip';
+import EventModal, { type SpaceEvent } from '../components/EventModal';
 import type { Article } from '../data/articles';
 
 export default function NewsPage() {
-  const [articles, setArticles]         = useState<Article[]>([]);
-  const [launches, setLaunches]         = useState<Launch[]>([]);
-  const [selected, setSelected]         = useState<Article | null>(null);
+  const [articles, setArticles]             = useState<Article[]>([]);
+  const [launches, setLaunches]             = useState<Launch[]>([]);
+  const [events, setEvents]                 = useState<SpaceEvent[]>([]);
+  const [selected, setSelected]             = useState<Article | null>(null);
   const [selectedLaunch, setSelectedLaunch] = useState<Launch | null>(null);
+  const [selectedEvent, setSelectedEvent]   = useState<SpaceEvent | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState('');
   const [refreshing, setRefreshing]     = useState(false);
@@ -19,17 +23,20 @@ export default function NewsPage() {
 
   const fetchNews = useCallback(async () => {
     try {
-      const [newsRes, launchRes] = await Promise.all([
+      const [newsRes, launchRes, eventRes] = await Promise.all([
         fetch('/api/news'),
         fetch('/api/launches'),
+        fetch('/api/events'),
       ]);
       if (!newsRes.ok) throw new Error('Ошибка сервера');
-      const [newsData, launchData] = await Promise.all([
+      const [newsData, launchData, eventData] = await Promise.all([
         newsRes.json() as Promise<Article[]>,
         launchRes.ok ? (launchRes.json() as Promise<Launch[]>) : Promise.resolve([]),
+        eventRes.ok  ? (eventRes.json()  as Promise<SpaceEvent[]>) : Promise.resolve([]),
       ]);
       setArticles(newsData);
       setLaunches(launchData);
+      setEvents(eventData);
       setError('');
     } catch {
       setError('Не удалось загрузить новости.');
@@ -91,6 +98,7 @@ export default function NewsPage() {
         </div>
 
         <LaunchStrip launches={launches} onSelect={setSelectedLaunch} />
+        <EventStrip events={events} onSelect={setSelectedEvent} />
 
         {loading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -164,6 +172,11 @@ export default function NewsPage() {
       <LaunchModal
         launch={selectedLaunch}
         onClose={() => setSelectedLaunch(null)}
+      />
+
+      <EventModal
+        event={selectedEvent}
+        onClose={() => setSelectedEvent(null)}
       />
     </>
   );
