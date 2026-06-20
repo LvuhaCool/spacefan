@@ -84,8 +84,8 @@ async function refreshLaunches() {
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO launches
-      (id, name, rocket, provider, pad, location, net, net_formatted, status_name, status_abbrev, landing_info, fetched_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, rocket, provider, pad, location, net, net_formatted, status_name, status_abbrev, landing_info, mission_description, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const now = Date.now();
@@ -113,6 +113,7 @@ async function refreshLaunches() {
         l.status?.name ?? '',
         l.status?.abbrev ?? 'TBD',
         JSON.stringify(landings),
+        l.mission?.description ?? '',
         now,
       );
     }

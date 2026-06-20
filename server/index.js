@@ -47,8 +47,9 @@ app.get('/api/launches', (_req, res) => {
     net:          r.net,
     netFormatted: r.net_formatted,
     statusName:   r.status_name,
-    statusAbbrev: r.status_abbrev,
-    landingInfo:  JSON.parse(r.landing_info ?? '[]'),
+    statusAbbrev:       r.status_abbrev,
+    landingInfo:        JSON.parse(r.landing_info ?? '[]'),
+    missionDescription: r.mission_description ?? '',
   })));
 });
 

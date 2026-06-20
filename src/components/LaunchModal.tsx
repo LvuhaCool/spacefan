@@ -17,6 +17,7 @@ export interface Launch {
   statusName: string;
   statusAbbrev: string;
   landingInfo: LandingSite[];
+  missionDescription: string;
 }
 
 function statusStyle(abbrev: string) {
@@ -26,6 +27,22 @@ function statusStyle(abbrev: string) {
     case 'In Flight': return 'bg-blue-50 text-blue-700';
     default:          return 'bg-stone-100 text-stone-500';
   }
+}
+
+function landingTypeRu(type: string) {
+  switch (type) {
+    case 'ASDS':  return 'Баржа';
+    case 'RTLS':  return 'Возврат';
+    case 'Ocean': return 'Океан';
+    default:      return type || '—';
+  }
+}
+
+function landingName(site: LandingSite) {
+  if (site.name) return site.name;
+  if (site.type === 'RTLS') return 'Стартовый комплекс';
+  if (site.type === 'ASDS') return 'Борт уточняется';
+  return 'Место уточняется';
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -65,10 +82,10 @@ export default function LaunchModal({ launch, onClose }: Props) {
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
 
       <div
-        className="relative bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden"
+        className="relative bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden max-h-[90svh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 flex flex-col gap-5">
+        <div className="p-6 flex flex-col gap-5 overflow-y-auto">
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-xs text-stone-400 mb-1">{launch.provider}</p>
@@ -79,13 +96,19 @@ export default function LaunchModal({ launch, onClose }: Props) {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
+          <div className="flex flex-col gap-4">
             <Row label="Ракета"         value={launch.rocket} />
             <Row label="Время запуска"  value={launch.netFormatted} />
             <Row label="Стартовый стол" value={launch.pad} />
-            <Row label="Космодром" value={launch.location} />
+            <Row label="Космодром"      value={launch.location} />
             {launch.statusName && launch.statusName !== launch.statusAbbrev && (
               <Row label="Статус" value={launch.statusName} />
+            )}
+            {launch.missionDescription && (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide">Миссия</span>
+                <p className="text-sm text-stone-700 leading-relaxed">{launch.missionDescription}</p>
+              </div>
             )}
           </div>
 
@@ -97,12 +120,14 @@ export default function LaunchModal({ launch, onClose }: Props) {
               <div className="mt-2 flex flex-col gap-2">
                 {launch.landingInfo.map((site, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm text-stone-800">
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-stone-100 text-stone-500 font-mono shrink-0">
-                      {site.type || '?'}
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium shrink-0">
+                      {landingTypeRu(site.type)}
                     </span>
-                    <span>{site.name || 'Площадка TBD'}</span>
+                    <span className={!site.name ? 'text-stone-400 italic' : ''}>
+                      {landingName(site)}
+                    </span>
                     {site.reused && (
-                      <span className="text-xs text-stone-400 ml-auto">б/у ступень</span>
+                      <span className="text-xs text-stone-400 ml-auto shrink-0">б/у</span>
                     )}
                   </div>
                 ))}
@@ -111,7 +136,7 @@ export default function LaunchModal({ launch, onClose }: Props) {
           )}
         </div>
 
-        <div className="px-6 pb-6">
+        <div className="flex-shrink-0 px-6 pb-6">
           <button
             onClick={onClose}
             className="w-full py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"

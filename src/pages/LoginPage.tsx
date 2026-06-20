@@ -107,14 +107,26 @@ function EyeIcon({ open }: { open: boolean }) {
 // ── Main ──────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const { onLogin } = useAuth();
-  const [step, setStepState] = useState<Step>(
-    () => (sessionStorage.getItem('spacefan_login_step') as Step) ?? 'password'
-  );
+  const [step, setStepState] = useState<Step>(() => {
+    try {
+      const raw = localStorage.getItem('spacefan_login_step');
+      if (!raw) return 'password';
+      const { at } = JSON.parse(raw);
+      // auto-expire after 10 minutes (matches OTP lifetime)
+      if (Date.now() - at > 10 * 60 * 1000) {
+        localStorage.removeItem('spacefan_login_step');
+        return 'password';
+      }
+      return 'otp';
+    } catch {
+      return 'password';
+    }
+  });
 
   const setStep = (s: Step) => {
     setStepState(s);
-    if (s === 'otp') sessionStorage.setItem('spacefan_login_step', 'otp');
-    else sessionStorage.removeItem('spacefan_login_step');
+    if (s === 'otp') localStorage.setItem('spacefan_login_step', JSON.stringify({ at: Date.now() }));
+    else localStorage.removeItem('spacefan_login_step');
   };
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
@@ -158,7 +170,7 @@ export default function LoginPage() {
         setError(data.error ?? 'Неверный код.');
         setOtpKey((k) => k + 1); // clears and refocuses boxes
       } else {
-        sessionStorage.removeItem('spacefan_login_step');
+        localStorage.removeItem('spacefan_login_step');
         onLogin();
       }
     } catch {

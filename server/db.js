@@ -98,5 +98,8 @@ const launchColumns = db.prepare('PRAGMA table_info(launches)').all().map(c => c
 if (!launchColumns.includes('landing_info')) {
   db.exec('ALTER TABLE launches ADD COLUMN landing_info TEXT NOT NULL DEFAULT "[]"');
 }
+if (!launchColumns.includes('mission_description')) {
+  db.exec('ALTER TABLE launches ADD COLUMN mission_description TEXT NOT NULL DEFAULT ""');
+}
 
 export default db;
