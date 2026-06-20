@@ -83,7 +83,7 @@ export default function LaunchModal({ launch, onClose }: Props) {
             <Row label="Ракета"         value={launch.rocket} />
             <Row label="Время запуска"  value={launch.netFormatted} />
             <Row label="Стартовый стол" value={launch.pad} />
-            <Row label="Стартовый сайт" value={launch.location} />
+            <Row label="Космодром" value={launch.location} />
             {launch.statusName && launch.statusName !== launch.statusAbbrev && (
               <Row label="Статус" value={launch.statusName} />
             )}

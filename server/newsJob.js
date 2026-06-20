@@ -1,7 +1,7 @@
 import db from './db.js';
 
 const SPACEFLIGHT_URL  = 'https://api.spaceflightnewsapi.net/v4/articles/?limit=20&ordering=-published_at';
-const LL2_URL          = 'https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=5&ordering=net';
+const LL2_URL          = 'https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=5&ordering=net&mode=detailed';
 const LL2_EVENTS_URL   = 'https://ll.thespacedevs.com/2.3.0/events/upcoming/?limit=10&ordering=date';
 const REFRESH_INTERVAL = 30 * 60 * 1000;
 
@@ -94,10 +94,10 @@ async function refreshLaunches() {
     for (const l of list) {
       const stages = l.rocket?.launcher_stage ?? [];
       const landings = stages
-        .filter(s => s.landing?.attempt)
+        .filter(s => s.landing)
         .map(s => ({
-          name:   s.landing?.location?.name  ?? '',
-          type:   s.landing?.type?.abbrev    ?? '',
+          name:   s.landing?.location?.name ?? '',
+          type:   s.landing?.type?.abbrev   ?? '',
           reused: s.reused ?? false,
         }));
 

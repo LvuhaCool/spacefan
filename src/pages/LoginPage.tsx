@@ -107,7 +107,15 @@ function EyeIcon({ open }: { open: boolean }) {
 // ── Main ──────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const { onLogin } = useAuth();
-  const [step, setStep]       = useState<Step>('password');
+  const [step, setStepState] = useState<Step>(
+    () => (sessionStorage.getItem('spacefan_login_step') as Step) ?? 'password'
+  );
+
+  const setStep = (s: Step) => {
+    setStepState(s);
+    if (s === 'otp') sessionStorage.setItem('spacefan_login_step', 'otp');
+    else sessionStorage.removeItem('spacefan_login_step');
+  };
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
@@ -150,6 +158,7 @@ export default function LoginPage() {
         setError(data.error ?? 'Неверный код.');
         setOtpKey((k) => k + 1); // clears and refocuses boxes
       } else {
+        sessionStorage.removeItem('spacefan_login_step');
         onLogin();
       }
     } catch {
