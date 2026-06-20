@@ -7,6 +7,7 @@ export interface Article {
   category: string;
   date: string;
   readTime: number;
+  sourceUrl?: string;
 }
 
 export const articles: Article[] = [

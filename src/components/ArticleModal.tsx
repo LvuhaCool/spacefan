@@ -73,6 +73,16 @@ export default function ArticleModal({ article, onClose, onWriteAbout }: Props) 
           >
             Написать статью на эту тему
           </button>
+          {article.sourceUrl && (
+            <a
+              href={article.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"
+            >
+              Источник ↗
+            </a>
+          )}
           <button
             onClick={onClose}
             className="px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"

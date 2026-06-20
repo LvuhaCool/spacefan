@@ -41,6 +41,20 @@ db.exec(`
     source_url  TEXT    NOT NULL DEFAULT '',
     fetched_at  INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS launches (
+    id            TEXT    PRIMARY KEY,
+    name          TEXT    NOT NULL DEFAULT '',
+    rocket        TEXT    NOT NULL DEFAULT '',
+    provider      TEXT    NOT NULL DEFAULT '',
+    pad           TEXT    NOT NULL DEFAULT '',
+    location      TEXT    NOT NULL DEFAULT '',
+    net           TEXT    NOT NULL DEFAULT '',
+    net_formatted TEXT    NOT NULL DEFAULT '',
+    status_name   TEXT    NOT NULL DEFAULT '',
+    status_abbrev TEXT    NOT NULL DEFAULT 'TBD',
+    fetched_at    INTEGER NOT NULL
+  );
 `);
 
 export default db;

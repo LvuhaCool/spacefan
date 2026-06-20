@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import authRouter from './auth.js';
 import db from './db.js';
-import { startNewsJob } from './newsJob.js';
+import { startNewsJob, refreshFeed } from './newsJob.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app  = express();
@@ -23,19 +23,36 @@ app.use('/api/auth', authRouter);
 app.get('/api/news', (_req, res) => {
   const rows = db.prepare('SELECT * FROM news_feed ORDER BY id ASC').all();
   res.json(rows.map(r => ({
-    id:       r.id,
-    title:    r.title,
-    excerpt:  r.excerpt,
-    content:  r.content,
-    imageUrl: r.image_url,
-    category: r.category,
-    date:     r.event_date,
-    readTime: r.read_time,
+    id:        r.id,
+    title:     r.title,
+    excerpt:   r.excerpt,
+    content:   r.content,
+    imageUrl:  r.image_url,
+    category:  r.category,
+    date:      r.event_date,
+    readTime:  r.read_time,
+    sourceUrl: r.source_url,
+  })));
+});
+
+app.get('/api/launches', (_req, res) => {
+  const rows = db.prepare('SELECT * FROM launches ORDER BY net ASC').all();
+  res.json(rows.map(r => ({
+    id:           r.id,
+    name:         r.name,
+    rocket:       r.rocket,
+    provider:     r.provider,
+    pad:          r.pad,
+    location:     r.location,
+    net:          r.net,
+    netFormatted: r.net_formatted,
+    statusName:   r.status_name,
+    statusAbbrev: r.status_abbrev,
   })));
 });
 
 app.post('/api/news/refresh', (_req, res) => {
-  import('./newsJob.js').then(({ refreshNews }) => refreshNews());
+  refreshFeed();
   res.json({ ok: true });
 });
 

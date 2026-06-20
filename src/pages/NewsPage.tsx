@@ -2,10 +2,24 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ArticleCard from '../components/ArticleCard';
 import ArticleModal from '../components/ArticleModal';
+import LaunchStrip from '../components/LaunchStrip';
 import type { Article } from '../data/articles';
+
+interface Launch {
+  id: string;
+  name: string;
+  rocket: string;
+  provider: string;
+  pad: string;
+  location: string;
+  netFormatted: string;
+  statusAbbrev: string;
+  statusName: string;
+}
 
 export default function NewsPage() {
   const [articles, setArticles]   = useState<Article[]>([]);
+  const [launches, setLaunches]   = useState<Launch[]>([]);
   const [selected, setSelected]   = useState<Article | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
@@ -14,10 +28,17 @@ export default function NewsPage() {
 
   const fetchNews = useCallback(async () => {
     try {
-      const res = await fetch('/api/news');
-      if (!res.ok) throw new Error('Ошибка сервера');
-      const data: Article[] = await res.json();
-      setArticles(data);
+      const [newsRes, launchRes] = await Promise.all([
+        fetch('/api/news'),
+        fetch('/api/launches'),
+      ]);
+      if (!newsRes.ok) throw new Error('Ошибка сервера');
+      const [newsData, launchData] = await Promise.all([
+        newsRes.json() as Promise<Article[]>,
+        launchRes.ok ? (launchRes.json() as Promise<Launch[]>) : Promise.resolve([]),
+      ]);
+      setArticles(newsData);
+      setLaunches(launchData);
       setError('');
     } catch {
       setError('Не удалось загрузить новости.');
@@ -32,8 +53,7 @@ export default function NewsPage() {
     setRefreshing(true);
     try {
       await fetch('/api/news/refresh', { method: 'POST' });
-      // The job runs async on the server; wait a moment then re-fetch
-      await new Promise(r => setTimeout(r, 8000));
+      await new Promise(r => setTimeout(r, 10000));
       await fetchNews();
     } finally {
       setRefreshing(false);
@@ -71,6 +91,8 @@ export default function NewsPage() {
           </button>
         </div>
 
+        <LaunchStrip launches={launches} />
+
         {loading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -82,21 +104,16 @@ export default function NewsPage() {
         {!loading && error && (
           <div className="text-center py-16">
             <p className="text-stone-400 text-sm mb-4">{error}</p>
-            <button
-              onClick={fetchNews}
-              className="text-sm text-stone-600 underline underline-offset-2"
-            >
+            <button onClick={fetchNews} className="text-sm text-stone-600 underline underline-offset-2">
               Попробовать снова
             </button>
           </div>
         )}
 
         {!loading && !error && articles.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-stone-400 text-sm">
-              Лента обновляется, подождите немного…
-            </p>
-          </div>
+          <p className="text-stone-400 text-sm text-center py-16">
+            Лента обновляется, подождите немного…
+          </p>
         )}
 
         {!loading && articles.length > 0 && (
