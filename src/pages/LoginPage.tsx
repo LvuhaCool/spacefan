@@ -19,7 +19,17 @@ function OtpBoxes({
   };
 
   const handleChange = (i: number, val: string) => {
-    const digit = val.replace(/\D/g, '').slice(-1);
+    const clean = val.replace(/\D/g, '');
+    if (clean.length > 1) {
+      // paste via onChange (common on mobile)
+      const next = ['', '', '', '', '', ''];
+      clean.slice(0, 6).split('').forEach((d, idx) => { next[idx] = d; });
+      setDigits(next);
+      refs.current[Math.min(clean.length, 5)]?.focus();
+      trySubmit(next);
+      return;
+    }
+    const digit = clean;
     const next = [...digits];
     next[i] = digit;
     setDigits(next);
@@ -57,7 +67,6 @@ function OtpBoxes({
           ref={(el) => { refs.current[i] = el; }}
           type="text"
           inputMode="numeric"
-          maxLength={1}
           value={digit}
           autoFocus={i === 0}
           disabled={disabled}
