@@ -66,29 +66,31 @@ export default function ArticleModal({ article, onClose, onWriteAbout }: Props) 
           </div>
         </div>
 
-        <div className="flex-shrink-0 p-4 border-t border-stone-100 flex gap-2">
+        <div className="flex-shrink-0 p-4 border-t border-stone-100 flex flex-col gap-2">
           <button
             onClick={() => onWriteAbout(article.title)}
-            className="flex-1 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors"
+            className="w-full py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors text-center"
           >
             Написать статью на эту тему
           </button>
-          {article.sourceUrl && (
-            <a
-              href={article.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"
+          <div className="flex gap-2">
+            {article.sourceUrl && (
+              <a
+                href={article.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors text-center"
+              >
+                Источник ↗
+              </a>
+            )}
+            <button
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"
             >
-              Источник ↗
-            </a>
-          )}
-          <button
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"
-          >
-            Закрыть
-          </button>
+              Закрыть
+            </button>
+          </div>
         </div>
       </div>
     </div>

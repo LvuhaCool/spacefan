@@ -30,16 +30,17 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS news_feed (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    title       TEXT    NOT NULL,
-    excerpt     TEXT    NOT NULL,
-    content     TEXT    NOT NULL,
-    image_url   TEXT    NOT NULL DEFAULT '',
-    category    TEXT    NOT NULL DEFAULT 'Космос',
-    event_date  TEXT    NOT NULL DEFAULT '',
-    read_time   INTEGER NOT NULL DEFAULT 3,
-    source_url  TEXT    NOT NULL DEFAULT '',
-    fetched_at  INTEGER NOT NULL
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    sfn_id     INTEGER NOT NULL UNIQUE,
+    title      TEXT    NOT NULL,
+    excerpt    TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    image_url  TEXT    NOT NULL DEFAULT '',
+    category   TEXT    NOT NULL DEFAULT '',
+    event_date TEXT    NOT NULL DEFAULT '',
+    read_time  INTEGER NOT NULL DEFAULT 2,
+    source_url TEXT    NOT NULL DEFAULT '',
+    fetched_at INTEGER NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS launches (
@@ -53,8 +54,37 @@ db.exec(`
     net_formatted TEXT    NOT NULL DEFAULT '',
     status_name   TEXT    NOT NULL DEFAULT '',
     status_abbrev TEXT    NOT NULL DEFAULT 'TBD',
+    landing_info  TEXT    NOT NULL DEFAULT '[]',
     fetched_at    INTEGER NOT NULL
   );
 `);
+
+// ── Migrations for existing installs ──────────────────────────────────
+
+const newsColumns = db.prepare('PRAGMA table_info(news_feed)').all().map(c => c.name);
+if (!newsColumns.includes('sfn_id')) {
+  // Old schema — drop and let the job repopulate from SFN
+  db.exec('DROP TABLE news_feed');
+  db.exec(`
+    CREATE TABLE news_feed (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      sfn_id     INTEGER NOT NULL UNIQUE,
+      title      TEXT    NOT NULL,
+      excerpt    TEXT    NOT NULL,
+      content    TEXT    NOT NULL,
+      image_url  TEXT    NOT NULL DEFAULT '',
+      category   TEXT    NOT NULL DEFAULT '',
+      event_date TEXT    NOT NULL DEFAULT '',
+      read_time  INTEGER NOT NULL DEFAULT 2,
+      source_url TEXT    NOT NULL DEFAULT '',
+      fetched_at INTEGER NOT NULL
+    )
+  `);
+}
+
+const launchColumns = db.prepare('PRAGMA table_info(launches)').all().map(c => c.name);
+if (!launchColumns.includes('landing_info')) {
+  db.exec('ALTER TABLE launches ADD COLUMN landing_info TEXT NOT NULL DEFAULT "[]"');
+}
 
 export default db;

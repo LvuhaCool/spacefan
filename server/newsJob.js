@@ -1,11 +1,17 @@
-import Groq from 'groq-sdk';
 import db from './db.js';
 
-const SPACEFLIGHT_URL   = 'https://api.spaceflightnewsapi.net/v4/articles/?limit=20&ordering=-published_at';
-const LL2_URL           = 'https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=5&ordering=net';
-const REFRESH_INTERVAL  = 30 * 60 * 1000;
+const SPACEFLIGHT_URL  = 'https://api.spaceflightnewsapi.net/v4/articles/?limit=20&ordering=-published_at';
+const LL2_URL          = 'https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=5&ordering=net';
+const REFRESH_INTERVAL = 30 * 60 * 1000;
 
 const MONTHS_RU = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getUTCDate()} ${MONTHS_RU[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
 
 function formatNet(iso) {
   if (!iso) return 'Дата уточняется';
@@ -16,15 +22,10 @@ function formatNet(iso) {
   return `${d.getUTCDate()} ${MONTHS_RU[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${h}:${m} UTC`;
 }
 
-function getGroq() {
-  return new Groq({ apiKey: process.env.GROQ_API_KEY });
-}
-
-// ── News ──────────────────────────────────────────────────────────────
+// ── News (Spaceflight News API, raw English) ──────────────────────────
 
 async function refreshNews() {
-  console.log('[news] Fetching articles...');
-
+  console.log('[news] Fetching articles from Spaceflight News API...');
   let raw;
   try {
     const res = await fetch(SPACEFLIGHT_URL);
@@ -35,90 +36,38 @@ async function refreshNews() {
     return;
   }
 
-  const sources = raw.results.map((a, i) => ({
-    n:            i + 1,
-    title:        a.title,
-    summary:      a.summary ?? '',
-    image_url:    a.image_url ?? '',
-    url:          a.url ?? '',
-    news_site:    a.news_site ?? '',
-    published_at: a.published_at ?? '',
-  }));
-
-  const prompt = `You are a translator for a Russian-language space news platform. Given these ${sources.length} recent English space news articles, pick the 8 most important and translate them into Russian.
-
-STRICT RULES — breaking these causes harm:
-1. Translate faithfully. Do NOT invent facts, dates, locations, or technical specs absent from the source text.
-2. If the source says nothing about a rocket stage count, fuel type, or trajectory — leave it out.
-3. Use published_at as the event_date — do not guess or fabricate a different date.
-4. Keep content proportional to the source: if the summary is 2 sentences, the Russian content should be ~2-3 sentences, not 3 invented paragraphs.
-
-For each chosen article return:
-- "title": natural Russian translation of the English title
-- "excerpt": Russian translation of the first sentence or two of the summary
-- "content": Russian translation of the full summary text — faithful, nothing added
-- "category": SpaceX / NASA / Роскосмос / Blue Origin / ESA / Rocket Lab / Запуск / Открытие / or a short fitting label
-- "image_url": copy image_url exactly
-- "source_url": copy url exactly
-- "event_date": date in Russian from published_at only (e.g. "20 июня 2026")
-- "read_time": 2
-
-Articles:
-${JSON.stringify(sources, null, 2)}
-
-Return {"articles": [...]} with exactly 8 items. JSON only, no markdown.`;
-
-  let picked;
-  try {
-    const completion = await getGroq().chat.completions.create({
-      model:           'llama-3.3-70b-versatile',
-      messages:        [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
-      temperature:     0.1,
-    });
-    const parsed = JSON.parse(completion.choices[0].message.content ?? '{}');
-    picked = Array.isArray(parsed)          ? parsed
-           : Array.isArray(parsed.articles) ? parsed.articles
-           : Object.values(parsed).find(Array.isArray);
-  } catch (err) {
-    console.error('[news] Groq error:', err.message);
-    return;
-  }
-
-  if (!Array.isArray(picked) || picked.length === 0) {
-    console.error('[news] Unexpected Groq response shape');
-    return;
-  }
-
   const insert = db.prepare(`
-    INSERT INTO news_feed (title, excerpt, content, image_url, category, event_date, read_time, source_url, fetched_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO news_feed (sfn_id, title, excerpt, content, image_url, category, event_date, read_time, source_url, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+
   const now = Date.now();
+  let added = 0;
   db.transaction(() => {
-    db.prepare('DELETE FROM news_feed').run();
-    for (const a of picked.slice(0, 8)) {
-      insert.run(
-        a.title      ?? '',
-        a.excerpt    ?? '',
-        a.content    ?? '',
-        a.image_url  ?? '',
-        a.category   ?? 'Космос',
-        a.event_date ?? '',
-        a.read_time  ?? 2,
-        a.source_url ?? '',
+    for (const a of raw.results ?? []) {
+      const result = insert.run(
+        a.id,
+        a.title        ?? '',
+        a.summary      ?? '',
+        a.summary      ?? '',
+        a.image_url    ?? '',
+        a.news_site    ?? 'Космос',
+        formatDate(a.published_at),
+        2,
+        a.url          ?? '',
         now,
       );
+      if (result.changes) added++;
     }
   })();
-  console.log(`[news] Updated — ${Math.min(picked.length, 8)} articles`);
+
+  console.log(`[news] +${added} new articles`);
 }
 
 // ── Launches (Launch Library 2) ───────────────────────────────────────
 
 async function refreshLaunches() {
   console.log('[launches] Fetching upcoming launches from LL2...');
-
   let raw;
   try {
     const res = await fetch(LL2_URL, { headers: { 'User-Agent': 'Spacefan/1.0' } });
@@ -134,13 +83,23 @@ async function refreshLaunches() {
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO launches
-      (id, name, rocket, provider, pad, location, net, net_formatted, status_name, status_abbrev, fetched_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, rocket, provider, pad, location, net, net_formatted, status_name, status_abbrev, landing_info, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+
   const now = Date.now();
   db.transaction(() => {
     db.prepare('DELETE FROM launches').run();
     for (const l of list) {
+      const stages = l.rocket?.launcher_stage ?? [];
+      const landings = stages
+        .filter(s => s.landing?.attempt)
+        .map(s => ({
+          name:   s.landing?.location?.name  ?? '',
+          type:   s.landing?.type?.abbrev    ?? '',
+          reused: s.reused ?? false,
+        }));
+
       insert.run(
         l.id,
         l.mission?.name ?? l.name ?? '',
@@ -152,10 +111,12 @@ async function refreshLaunches() {
         formatNet(l.net),
         l.status?.name ?? '',
         l.status?.abbrev ?? 'TBD',
+        JSON.stringify(landings),
         now,
       );
     }
   })();
+
   console.log(`[launches] Updated — ${list.length} launches`);
 }
 

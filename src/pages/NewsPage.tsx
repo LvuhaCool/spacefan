@@ -3,27 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import ArticleCard from '../components/ArticleCard';
 import ArticleModal from '../components/ArticleModal';
 import LaunchStrip from '../components/LaunchStrip';
+import LaunchModal, { type Launch } from '../components/LaunchModal';
 import type { Article } from '../data/articles';
 
-interface Launch {
-  id: string;
-  name: string;
-  rocket: string;
-  provider: string;
-  pad: string;
-  location: string;
-  netFormatted: string;
-  statusAbbrev: string;
-  statusName: string;
-}
-
 export default function NewsPage() {
-  const [articles, setArticles]   = useState<Article[]>([]);
-  const [launches, setLaunches]   = useState<Launch[]>([]);
-  const [selected, setSelected]   = useState<Article | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState('');
-  const [refreshing, setRefreshing] = useState(false);
+  const [articles, setArticles]         = useState<Article[]>([]);
+  const [launches, setLaunches]         = useState<Launch[]>([]);
+  const [selected, setSelected]         = useState<Article | null>(null);
+  const [selectedLaunch, setSelectedLaunch] = useState<Launch | null>(null);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState('');
+  const [refreshing, setRefreshing]     = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Article | null>(null);
   const navigate = useNavigate();
 
   const fetchNews = useCallback(async () => {
@@ -60,6 +51,14 @@ export default function NewsPage() {
     }
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setDeleteTarget(null);
+    setArticles(prev => prev.filter(a => a.id !== id));
+    await fetch(`/api/news/${id}`, { method: 'DELETE' });
+  };
+
   const handleWriteAbout = (title: string) => {
     setSelected(null);
     navigate('/write', { state: { fromTitle: title } });
@@ -71,7 +70,7 @@ export default function NewsPage() {
         <div className="mb-6 flex items-end justify-between">
           <div>
             <h1 className="text-2xl font-bold text-stone-900 mb-1">Новости</h1>
-            <p className="text-sm text-stone-400">AI-дайджест о космосе</p>
+            <p className="text-sm text-stone-400">Свежие новости о космосе</p>
           </div>
           <button
             onClick={handleRefresh}
@@ -91,7 +90,7 @@ export default function NewsPage() {
           </button>
         </div>
 
-        <LaunchStrip launches={launches} />
+        <LaunchStrip launches={launches} onSelect={setSelectedLaunch} />
 
         {loading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -123,16 +122,48 @@ export default function NewsPage() {
                 key={article.id}
                 article={article}
                 onClick={(id) => setSelected(articles.find((a) => a.id === id) ?? null)}
+                onDelete={(id) => setDeleteTarget(articles.find(a => a.id === id) ?? null)}
               />
             ))}
           </div>
         )}
       </main>
 
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDeleteTarget(null)} />
+          <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h2 className="text-base font-bold text-stone-900 mb-2">Удалить статью?</h2>
+            <p className="text-sm text-stone-500 mb-1 line-clamp-2">{deleteTarget.title}</p>
+            <p className="text-xs text-stone-400 mb-6">Статья исчезнет из ленты. Вернётся при следующем обновлении.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteConfirm}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+              >
+                Да, удалить
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"
+              >
+                Нет, оставить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ArticleModal
         article={selected}
         onClose={() => setSelected(null)}
         onWriteAbout={handleWriteAbout}
+      />
+
+      <LaunchModal
+        launch={selectedLaunch}
+        onClose={() => setSelectedLaunch(null)}
       />
     </>
   );

@@ -1,14 +1,4 @@
-interface Launch {
-  id: string;
-  name: string;
-  rocket: string;
-  provider: string;
-  pad: string;
-  location: string;
-  netFormatted: string;
-  statusAbbrev: string;
-  statusName: string;
-}
+import type { Launch } from './LaunchModal';
 
 function statusStyle(abbrev: string) {
   switch (abbrev) {
@@ -19,7 +9,12 @@ function statusStyle(abbrev: string) {
   }
 }
 
-export default function LaunchStrip({ launches }: { launches: Launch[] }) {
+interface Props {
+  launches: Launch[];
+  onSelect: (launch: Launch) => void;
+}
+
+export default function LaunchStrip({ launches, onSelect }: Props) {
   if (launches.length === 0) return null;
 
   return (
@@ -29,9 +24,10 @@ export default function LaunchStrip({ launches }: { launches: Launch[] }) {
       </h2>
       <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x snap-mandatory">
         {launches.map((l) => (
-          <div
+          <button
             key={l.id}
-            className="snap-start shrink-0 w-60 bg-white border border-stone-100 rounded-2xl p-4 flex flex-col gap-2"
+            onClick={() => onSelect(l)}
+            className="snap-start shrink-0 w-60 bg-white border border-stone-100 rounded-2xl p-4 flex flex-col gap-2 text-left hover:border-stone-300 hover:shadow-sm transition-all"
           >
             <div className="flex items-center justify-between gap-2">
               <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusStyle(l.statusAbbrev)}`}>
@@ -48,15 +44,11 @@ export default function LaunchStrip({ launches }: { launches: Launch[] }) {
               <p className="text-xs text-stone-400 truncate">{l.rocket}</p>
             )}
 
-            <div className="mt-auto pt-1 border-t border-stone-50">
-              <p className="text-[11px] text-stone-500 leading-relaxed">
-                {l.location}
-              </p>
-              <p className="text-[11px] font-medium text-stone-700 mt-0.5">
-                {l.netFormatted}
-              </p>
+            <div className="mt-auto pt-2 border-t border-stone-50">
+              <p className="text-[11px] text-stone-500 truncate">{l.location}</p>
+              <p className="text-[11px] font-medium text-stone-700 mt-0.5">{l.netFormatted}</p>
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </section>
