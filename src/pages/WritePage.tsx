@@ -6,20 +6,40 @@ import type { Draft } from '../lib/storage';
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
+interface ActiveFormats {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikeThrough: boolean;
+  blockType: string; // 'h2' | 'h3' | 'blockquote' | 'p' | ''
+  mixed: boolean;    // selection spans multiple formatting states
+}
+
+const EMPTY_FORMATS: ActiveFormats = {
+  bold: false, italic: false, underline: false,
+  strikeThrough: false, blockType: '', mixed: false,
+};
+
 function ToolBtn({
   onMouseDown,
   title,
   children,
+  active = false,
 }: {
   onMouseDown: (e: React.MouseEvent) => void;
   title: string;
   children: React.ReactNode;
+  active?: boolean;
 }) {
   return (
     <button
       onMouseDown={onMouseDown}
       title={title}
-      className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-stone-500 hover:bg-stone-200/60 hover:text-stone-900 transition-colors select-none"
+      className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors select-none ${
+        active
+          ? 'bg-stone-900 text-white'
+          : 'text-stone-500 hover:bg-stone-200/60 hover:text-stone-900'
+      }`}
     >
       {children}
     </button>
@@ -30,16 +50,22 @@ function FloatBtn({
   onMouseDown,
   title,
   children,
+  active = false,
 }: {
   onMouseDown: (e: React.MouseEvent) => void;
   title: string;
   children: React.ReactNode;
+  active?: boolean;
 }) {
   return (
     <button
       onMouseDown={onMouseDown}
       title={title}
-      className="w-7 h-7 flex items-center justify-center rounded-md text-white/90 hover:bg-white/20 active:bg-white/30 transition-colors select-none"
+      className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors select-none ${
+        active
+          ? 'bg-white/25 text-white'
+          : 'text-white/80 hover:bg-white/15 active:bg-white/25'
+      }`}
     >
       {children}
     </button>
@@ -50,18 +76,52 @@ export default function WritePage() {
   const editorRef    = useRef<HTMLDivElement>(null);
   const titleRef     = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const saveTimerRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const draggingFigRef   = useRef<HTMLElement | null>(null);
   const skipObserverRef  = useRef(false);
 
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [draftId,     setDraftId]     = useState<string>(() => crypto.randomUUID());
-  const [saveStatus,  setSaveStatus]  = useState<SaveStatus>('saved');
-  const [panelOpen,   setPanelOpen]   = useState(false);
-  const [drafts,      setDrafts]      = useState<Draft[]>(() => getDrafts());
-  const [floatPos,    setFloatPos]    = useState<{ top: number; left: number } | null>(null);
+  const [draftId,       setDraftId]       = useState<string>(() => crypto.randomUUID());
+  const [saveStatus,    setSaveStatus]    = useState<SaveStatus>('saved');
+  const [panelOpen,     setPanelOpen]     = useState(false);
+  const [drafts,        setDrafts]        = useState<Draft[]>(() => getDrafts());
+  const [floatPos,      setFloatPos]      = useState<{ top: number; left: number } | null>(null);
+  const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_FORMATS);
+
+  // ── Active format detection ──────────────────────────────────
+  const updateActiveFormats = useCallback(() => {
+    const sel    = window.getSelection();
+    const editor = editorRef.current;
+
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !editor?.contains(sel.anchorNode)) {
+      setActiveFormats(EMPTY_FORMATS);
+      return;
+    }
+
+    try {
+      const bold         = document.queryCommandState('bold');
+      const italic       = document.queryCommandState('italic');
+      const underline    = document.queryCommandState('underline');
+      const strikeThrough = document.queryCommandState('strikeThrough');
+      const blockType    = document.queryCommandValue('formatBlock').toLowerCase();
+
+      // Detect mixed: selection has SOME but not ALL of a format
+      const range    = sel.getRangeAt(0);
+      const fragment = range.cloneContents();
+
+      let mixed = false;
+      if (!bold        && fragment.querySelector('b, strong'))            mixed = true;
+      if (!italic      && fragment.querySelector('i, em'))                mixed = true;
+      if (!underline   && fragment.querySelector('u'))                    mixed = true;
+      if (!strikeThrough && (fragment.querySelector('s, strike')))        mixed = true;
+
+      setActiveFormats({ bold, italic, underline, strikeThrough, blockType, mixed });
+    } catch {
+      setActiveFormats(EMPTY_FORMATS);
+    }
+  }, []);
 
   // ── Auto-save ────────────────────────────────────────────────
   const doSave = useCallback(
@@ -99,20 +159,22 @@ export default function WritePage() {
     return () => obs.disconnect();
   }, [scheduleAutoSave]);
 
-  // ── Mobile floating toolbar ──────────────────────────────────
+  // ── selectionchange: active formats + mobile floating toolbar ─
   useEffect(() => {
-    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (!isTouch) return;
-
+    const isTouch  = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const TOOLBAR_W = 300;
-    const TOOLBAR_H = 44;
-    const GAP = 6;
+    const TOOLBAR_H = 60;  // slightly tall to account for optional label row
+    const SAMSUNG_H = 58;  // Samsung/iOS system selection toolbar height
+    const GAP = 8;
 
     const onSelectionChange = () => {
+      updateActiveFormats();
+      if (!isTouch) return;
+
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) { setFloatPos(null); return; }
 
-      const range = sel.getRangeAt(0);
+      const range  = sel.getRangeAt(0);
       const editor = editorRef.current;
       if (!editor || !editor.contains(range.commonAncestorContainer)) { setFloatPos(null); return; }
 
@@ -120,10 +182,16 @@ export default function WritePage() {
       if (!rect.width && !rect.height) { setFloatPos(null); return; }
 
       let left = rect.left + rect.width / 2 - TOOLBAR_W / 2;
-      left = Math.max(8, Math.min(left, window.innerWidth - TOOLBAR_W - 8));
+      left = Math.max(GAP, Math.min(left, window.innerWidth - TOOLBAR_W - GAP));
 
-      let top = rect.top - TOOLBAR_H - GAP;
-      if (top < 8) top = rect.bottom + GAP;
+      // Place BELOW the selection by default — system toolbar is usually above the text,
+      // so this avoids overlap. Only go above when below is off-screen, leaving SAMSUNG_H
+      // gap above the text for the system bar.
+      let top = rect.bottom + GAP;
+      if (top + TOOLBAR_H > window.innerHeight - 16) {
+        top = rect.top - TOOLBAR_H - SAMSUNG_H - GAP;
+        if (top < GAP) top = GAP;
+      }
 
       setFloatPos({ top, left });
     };
@@ -136,7 +204,7 @@ export default function WritePage() {
       document.removeEventListener('selectionchange', onSelectionChange);
       window.removeEventListener('scroll', onScroll);
     };
-  }, []);
+  }, [updateActiveFormats]);
 
   // ── Load from navigation state (write-about-this) ────────────
   useEffect(() => {
@@ -312,7 +380,7 @@ export default function WritePage() {
 
   // Intercept image paste (Ctrl+V / mobile paste)
   const handleEditorPaste = (e: React.ClipboardEvent) => {
-    const items = Array.from(e.clipboardData.items);
+    const items     = Array.from(e.clipboardData.items);
     const imageItem = items.find(item => item.type.startsWith('image/'));
     if (imageItem) {
       e.preventDefault();
@@ -346,6 +414,47 @@ export default function WritePage() {
     exec('formatBlock', 'BLOCKQUOTE');
   };
 
+  // ── Editor keydown: exit blockquote on second Enter ──────────
+  const handleEditorKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter') return;
+
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+
+    // Walk up to find enclosing blockquote
+    let node: Node | null = sel.anchorNode;
+    while (node && node !== editorRef.current) {
+      if ((node as HTMLElement).tagName === 'BLOCKQUOTE') {
+        const bq = node as HTMLElement;
+
+        // Find the direct child of the blockquote that contains the cursor
+        let blockNode: Node | null = sel.anchorNode;
+        while (blockNode && blockNode.parentNode !== bq) blockNode = blockNode.parentNode;
+
+        if (blockNode) {
+          const el      = blockNode as HTMLElement;
+          const isEmpty = !(el.textContent?.trim()) &&
+                          (el.innerHTML === '' || el.innerHTML === '<br>');
+          if (isEmpty) {
+            e.preventDefault();
+            el.remove();
+            const p = document.createElement('p');
+            p.innerHTML = '<br>';
+            bq.after(p);
+            const r = document.createRange();
+            r.setStart(p, 0);
+            r.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(r);
+            scheduleAutoSave();
+          }
+        }
+        return;
+      }
+      node = node.parentNode;
+    }
+  };
+
   // ── Save status label ────────────────────────────────────────
   const statusLabel =
     saveStatus === 'saving'
@@ -353,6 +462,10 @@ export default function WritePage() {
       : saveStatus === 'unsaved'
       ? '●'
       : 'Сохранено';
+
+  // Shortcuts for active-state props (suppress highlighting when mixed)
+  const af = activeFormats;
+  const noMix = !af.mixed;
 
   return (
     <>
@@ -414,37 +527,34 @@ export default function WritePage() {
 
         {/* Toolbar */}
         <div className="flex items-center gap-0.5 flex-wrap pb-4 mb-2 border-b border-stone-100">
-          <ToolBtn onMouseDown={(e) => { prevent(e); exec('bold'); }} title="Жирный">
+          <ToolBtn active={af.bold && noMix}        onMouseDown={(e) => { prevent(e); exec('bold'); }}         title="Жирный">
             <strong className="font-bold">B</strong>
           </ToolBtn>
-          <ToolBtn onMouseDown={(e) => { prevent(e); exec('italic'); }} title="Курсив">
+          <ToolBtn active={af.italic && noMix}      onMouseDown={(e) => { prevent(e); exec('italic'); }}       title="Курсив">
             <em>I</em>
           </ToolBtn>
-          <ToolBtn onMouseDown={(e) => { prevent(e); exec('underline'); }} title="Подчёркнутый">
+          <ToolBtn active={af.underline && noMix}   onMouseDown={(e) => { prevent(e); exec('underline'); }}    title="Подчёркнутый">
             <span className="underline">U</span>
           </ToolBtn>
-          <ToolBtn onMouseDown={(e) => { prevent(e); exec('strikeThrough'); }} title="Зачёркнутый">
+          <ToolBtn active={af.strikeThrough && noMix} onMouseDown={(e) => { prevent(e); exec('strikeThrough'); }} title="Зачёркнутый">
             <span className="line-through">S</span>
           </ToolBtn>
 
           <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
-          <ToolBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H2'); }} title="Заголовок H2">
+          <ToolBtn active={af.blockType === 'h2' && noMix} onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H2'); }} title="Заголовок H2">
             <span className="text-xs font-bold">H2</span>
           </ToolBtn>
-          <ToolBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H3'); }} title="Заголовок H3">
+          <ToolBtn active={af.blockType === 'h3' && noMix} onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H3'); }} title="Заголовок H3">
             <span className="text-xs font-bold">H3</span>
           </ToolBtn>
-          <ToolBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'p'); }} title="Обычный текст">
+          <ToolBtn active={false} onMouseDown={(e) => { prevent(e); exec('formatBlock', 'p'); }} title="Обычный текст">
             <span className="text-xs">P</span>
           </ToolBtn>
 
           <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
-          <ToolBtn
-            onMouseDown={(e) => { prevent(e); exec('insertUnorderedList'); }}
-            title="Маркированный список"
-          >
+          <ToolBtn active={false} onMouseDown={(e) => { prevent(e); exec('insertUnorderedList'); }} title="Маркированный список">
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
               <circle cx="2" cy="4" r="1.5" />
               <rect x="5" y="3" width="9" height="2" rx="1" />
@@ -454,10 +564,7 @@ export default function WritePage() {
               <rect x="5" y="11" width="9" height="2" rx="1" />
             </svg>
           </ToolBtn>
-          <ToolBtn
-            onMouseDown={(e) => { prevent(e); exec('insertOrderedList'); }}
-            title="Нумерованный список"
-          >
+          <ToolBtn active={false} onMouseDown={(e) => { prevent(e); exec('insertOrderedList'); }} title="Нумерованный список">
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
               <text x="0" y="5" fontSize="5" fontFamily="monospace">1.</text>
               <rect x="5" y="3" width="9" height="2" rx="1" />
@@ -470,16 +577,13 @@ export default function WritePage() {
 
           <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
-          <ToolBtn onMouseDown={toggleCallout} title="Выноска">
-            <span className="text-base font-bold leading-none">»</span>
+          <ToolBtn active={af.blockType === 'blockquote' && noMix} onMouseDown={toggleCallout} title="Выноска «»">
+            <span className="text-sm font-bold leading-none">«»</span>
           </ToolBtn>
 
           <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
-          <ToolBtn
-            onMouseDown={(e) => { prevent(e); fileInputRef.current?.click(); }}
-            title="Вставить изображение"
-          >
+          <ToolBtn active={false} onMouseDown={(e) => { prevent(e); fileInputRef.current?.click(); }} title="Вставить изображение">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
               <rect x="1" y="3" width="14" height="10" rx="2" />
               <circle cx="5.5" cy="6.5" r="1.5" />
@@ -503,6 +607,7 @@ export default function WritePage() {
           suppressContentEditableWarning
           data-placeholder="Начните писать..."
           onPaste={handleEditorPaste}
+          onKeyDown={handleEditorKeyDown}
           className="
             write-editor
             min-h-[65vh] outline-none
@@ -527,66 +632,73 @@ export default function WritePage() {
         </div>
       </div>
 
-      {/* Mobile floating toolbar — appears above highlighted text */}
+      {/* Mobile floating toolbar */}
       {floatPos && (
         <div
-          className="fixed z-50 flex items-center gap-0.5 bg-stone-900 rounded-xl shadow-xl px-1.5 py-1"
+          className="fixed z-50 flex flex-col bg-stone-900 rounded-xl shadow-xl overflow-hidden"
           style={{ top: floatPos.top, left: floatPos.left, width: 300 }}
           onMouseDown={(e) => e.preventDefault()}
         >
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('bold'); }} title="Жирный">
-            <strong className="text-xs font-bold">B</strong>
-          </FloatBtn>
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('italic'); }} title="Курсив">
-            <em className="text-xs">I</em>
-          </FloatBtn>
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('underline'); }} title="Подчёркнутый">
-            <span className="underline text-xs">U</span>
-          </FloatBtn>
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('strikeThrough'); }} title="Зачёркнутый">
-            <span className="line-through text-xs">S</span>
-          </FloatBtn>
+          {af.mixed && (
+            <p className="text-center text-[10px] text-white/40 tracking-wide pt-1.5 pb-0.5 select-none">
+              разные эффекты
+            </p>
+          )}
+          <div className="flex items-center gap-0.5 px-1.5 py-1">
+            <FloatBtn active={af.bold && noMix}        onMouseDown={(e) => { prevent(e); exec('bold'); }}          title="Жирный">
+              <strong className="text-xs font-bold">B</strong>
+            </FloatBtn>
+            <FloatBtn active={af.italic && noMix}      onMouseDown={(e) => { prevent(e); exec('italic'); }}        title="Курсив">
+              <em className="text-xs">I</em>
+            </FloatBtn>
+            <FloatBtn active={af.underline && noMix}   onMouseDown={(e) => { prevent(e); exec('underline'); }}     title="Подчёркнутый">
+              <span className="underline text-xs">U</span>
+            </FloatBtn>
+            <FloatBtn active={af.strikeThrough && noMix} onMouseDown={(e) => { prevent(e); exec('strikeThrough'); }} title="Зачёркнутый">
+              <span className="line-through text-xs">S</span>
+            </FloatBtn>
 
-          <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
+            <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
 
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H2'); }} title="H2">
-            <span className="text-[10px] font-bold">H2</span>
-          </FloatBtn>
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H3'); }} title="H3">
-            <span className="text-[10px] font-bold">H3</span>
-          </FloatBtn>
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'p'); }} title="Абзац">
-            <span className="text-[10px]">P</span>
-          </FloatBtn>
+            <FloatBtn active={af.blockType === 'h2' && noMix} onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H2'); }} title="H2">
+              <span className="text-[10px] font-bold">H2</span>
+            </FloatBtn>
+            <FloatBtn active={af.blockType === 'h3' && noMix} onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H3'); }} title="H3">
+              <span className="text-[10px] font-bold">H3</span>
+            </FloatBtn>
+            <FloatBtn active={false} onMouseDown={(e) => { prevent(e); exec('formatBlock', 'p'); }} title="Абзац">
+              <span className="text-[10px]">P</span>
+            </FloatBtn>
 
-          <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
+            <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
 
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('insertUnorderedList'); }} title="Список">
-            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
-              <circle cx="1.5" cy="2.5" r="1.5" />
-              <rect x="4" y="1.5" width="7" height="1.5" rx="0.5" />
-              <circle cx="1.5" cy="6" r="1.5" />
-              <rect x="4" y="5" width="7" height="1.5" rx="0.5" />
-              <circle cx="1.5" cy="9.5" r="1.5" />
-              <rect x="4" y="8.5" width="7" height="1.5" rx="0.5" />
-            </svg>
-          </FloatBtn>
-          <FloatBtn onMouseDown={(e) => { prevent(e); exec('insertOrderedList'); }} title="Нумер. список">
-            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
-              <text x="0" y="4"  fontSize="4" fontFamily="monospace">1.</text>
-              <rect x="4" y="1.5" width="7" height="1.5" rx="0.5" />
-              <text x="0" y="7.5" fontSize="4" fontFamily="monospace">2.</text>
-              <rect x="4" y="5"   width="7" height="1.5" rx="0.5" />
-              <text x="0" y="11"  fontSize="4" fontFamily="monospace">3.</text>
-              <rect x="4" y="8.5" width="7" height="1.5" rx="0.5" />
-            </svg>
-          </FloatBtn>
+            <FloatBtn active={false} onMouseDown={(e) => { prevent(e); exec('insertUnorderedList'); }} title="Список">
+              <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
+                <circle cx="1.5" cy="2.5" r="1.5" />
+                <rect x="4" y="1.5" width="7" height="1.5" rx="0.5" />
+                <circle cx="1.5" cy="6" r="1.5" />
+                <rect x="4" y="5"   width="7" height="1.5" rx="0.5" />
+                <circle cx="1.5" cy="9.5" r="1.5" />
+                <rect x="4" y="8.5" width="7" height="1.5" rx="0.5" />
+              </svg>
+            </FloatBtn>
+            <FloatBtn active={false} onMouseDown={(e) => { prevent(e); exec('insertOrderedList'); }} title="Нумер. список">
+              <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
+                <text x="0" y="4"   fontSize="4" fontFamily="monospace">1.</text>
+                <rect x="4" y="1.5" width="7" height="1.5" rx="0.5" />
+                <text x="0" y="7.5" fontSize="4" fontFamily="monospace">2.</text>
+                <rect x="4" y="5"   width="7" height="1.5" rx="0.5" />
+                <text x="0" y="11"  fontSize="4" fontFamily="monospace">3.</text>
+                <rect x="4" y="8.5" width="7" height="1.5" rx="0.5" />
+              </svg>
+            </FloatBtn>
 
-          <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
+            <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
 
-          <FloatBtn onMouseDown={toggleCallout} title="Выноска">
-            <span className="text-xs font-bold">»</span>
-          </FloatBtn>
+            <FloatBtn active={af.blockType === 'blockquote' && noMix} onMouseDown={toggleCallout} title="Выноска">
+              <span className="text-xs font-bold">«»</span>
+            </FloatBtn>
+          </div>
         </div>
       )}
 
