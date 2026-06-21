@@ -14,7 +14,7 @@ const PORT = process.env.PORT ?? 3001;
 // Trust Railway's proxy so req.ip is the real client IP
 app.set('trust proxy', 1);
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
 // ── API ───────────────────────────────────────────────────────────────

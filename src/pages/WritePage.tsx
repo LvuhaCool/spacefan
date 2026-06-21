@@ -335,11 +335,16 @@ export default function WritePage() {
   }, [scheduleAutoSave]);
 
   // ── Image insertion ──────────────────────────────────────────
-  const insertImage = (file: File) => {
+  const insertImage = async (file: File) => {
     const editor = editorRef.current;
     if (!editor) return;
 
-    const url = URL.createObjectURL(file);
+    // Base64 so the image survives across devices, tabs, and sessions
+    const url = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target!.result as string);
+      reader.readAsDataURL(file);
+    });
 
     const figure = document.createElement('figure');
     figure.setAttribute('data-image-block', '');
@@ -382,7 +387,7 @@ export default function WritePage() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    Array.from(e.target.files ?? []).forEach(insertImage);
+    Array.from(e.target.files ?? []).forEach(file => { void insertImage(file); });
     e.target.value = '';
   };
 
@@ -393,7 +398,7 @@ export default function WritePage() {
     if (imageItem) {
       e.preventDefault();
       const file = imageItem.getAsFile();
-      if (file) insertImage(file);
+      if (file) void insertImage(file);
     }
   };
 
