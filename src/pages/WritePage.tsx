@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DraftPanel from '../components/DraftPanel';
+import PublishModal from '../components/PublishModal';
 import { saveDraft, getDrafts, deleteDraft } from '../lib/storage';
 import type { Draft } from '../lib/storage';
 
@@ -91,6 +92,7 @@ export default function WritePage() {
   const [drafts,        setDrafts]        = useState<Draft[]>([]);
   const [floatPos,      setFloatPos]      = useState<{ top: number; left: number } | null>(null);
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_FORMATS);
+  const [publishData,   setPublishData]   = useState<{ title: string; content: string } | null>(null);
 
   // ── Active format detection ──────────────────────────────────
   const updateActiveFormats = useCallback(() => {
@@ -637,18 +639,26 @@ export default function WritePage() {
 
       {/* Fixed footer */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#f8f7f5]/90 backdrop-blur-sm border-t border-stone-100 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex gap-2">
-          <button className="flex-1 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors">
+        <div className="max-w-3xl mx-auto px-4 py-3">
+          <button
+            onClick={() => setPublishData({
+              title:   titleRef.current?.textContent?.trim() ?? '',
+              content: editorRef.current?.innerHTML ?? '',
+            })}
+            className="w-full py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors"
+          >
             Опубликовать
-          </button>
-          <button className="px-4 py-2.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors">
-            Telegram
-          </button>
-          <button className="px-4 py-2.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors">
-            Дзен
           </button>
         </div>
       </div>
+
+      {publishData && (
+        <PublishModal
+          title={publishData.title}
+          content={publishData.content}
+          onClose={() => setPublishData(null)}
+        />
+      )}
 
       {/* Mobile floating toolbar */}
       {floatPos && (
