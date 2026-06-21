@@ -26,21 +26,42 @@ function ToolBtn({
   );
 }
 
+function FloatBtn({
+  onMouseDown,
+  title,
+  children,
+}: {
+  onMouseDown: (e: React.MouseEvent) => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onMouseDown={onMouseDown}
+      title={title}
+      className="w-7 h-7 flex items-center justify-center rounded-md text-white/90 hover:bg-white/20 active:bg-white/30 transition-colors select-none"
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function WritePage() {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLInputElement>(null);
+  const editorRef    = useRef<HTMLDivElement>(null);
+  const titleRef     = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const draggingFigRef = useRef<HTMLElement | null>(null);
-  const skipObserverRef = useRef(false);
+  const draggingFigRef   = useRef<HTMLElement | null>(null);
+  const skipObserverRef  = useRef(false);
 
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID());
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [drafts, setDrafts] = useState<Draft[]>(() => getDrafts());
+  const [draftId,     setDraftId]     = useState<string>(() => crypto.randomUUID());
+  const [saveStatus,  setSaveStatus]  = useState<SaveStatus>('saved');
+  const [panelOpen,   setPanelOpen]   = useState(false);
+  const [drafts,      setDrafts]      = useState<Draft[]>(() => getDrafts());
+  const [floatPos,    setFloatPos]    = useState<{ top: number; left: number } | null>(null);
 
   // ── Auto-save ────────────────────────────────────────────────
   const doSave = useCallback(
@@ -49,8 +70,8 @@ export default function WritePage() {
       const existing = getDraft(id);
       saveDraft({
         id,
-        title: titleRef.current?.value.trim() || 'Без названия',
-        content: editorRef.current?.innerHTML ?? '',
+        title:     titleRef.current?.textContent?.trim() || 'Без названия',
+        content:   editorRef.current?.innerHTML ?? '',
         updatedAt: Date.now(),
         createdAt: existing?.createdAt ?? Date.now(),
       });
@@ -66,7 +87,7 @@ export default function WritePage() {
     saveTimerRef.current = setTimeout(() => doSave(draftId), 700);
   }, [draftId, doSave]);
 
-  // MutationObserver on the editor
+  // MutationObserver on the editor body
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -78,14 +99,53 @@ export default function WritePage() {
     return () => obs.disconnect();
   }, [scheduleAutoSave]);
 
+  // ── Mobile floating toolbar ──────────────────────────────────
+  useEffect(() => {
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (!isTouch) return;
+
+    const TOOLBAR_W = 300;
+    const TOOLBAR_H = 44;
+    const GAP = 6;
+
+    const onSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) { setFloatPos(null); return; }
+
+      const range = sel.getRangeAt(0);
+      const editor = editorRef.current;
+      if (!editor || !editor.contains(range.commonAncestorContainer)) { setFloatPos(null); return; }
+
+      const rect = range.getBoundingClientRect();
+      if (!rect.width && !rect.height) { setFloatPos(null); return; }
+
+      let left = rect.left + rect.width / 2 - TOOLBAR_W / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - TOOLBAR_W - 8));
+
+      let top = rect.top - TOOLBAR_H - GAP;
+      if (top < 8) top = rect.bottom + GAP;
+
+      setFloatPos({ top, left });
+    };
+
+    const onScroll = () => setFloatPos(null);
+
+    document.addEventListener('selectionchange', onSelectionChange);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      document.removeEventListener('selectionchange', onSelectionChange);
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+
   // ── Load from navigation state (write-about-this) ────────────
   useEffect(() => {
     const state = location.state as { fromTitle?: string } | null;
     if (!state?.fromTitle) return;
     const newId = crypto.randomUUID();
     setDraftId(newId);
-    if (titleRef.current) titleRef.current.value = state.fromTitle;
-    if (editorRef.current) editorRef.current.innerHTML = '';
+    if (titleRef.current)  titleRef.current.textContent  = state.fromTitle;
+    if (editorRef.current) editorRef.current.innerHTML   = '';
     setSaveStatus('unsaved');
     navigate('/write', { replace: true, state: null });
   }, [location.state, navigate]);
@@ -94,8 +154,8 @@ export default function WritePage() {
   const loadDraft = useCallback((draft: Draft) => {
     skipObserverRef.current = true;
     setDraftId(draft.id);
-    if (titleRef.current) titleRef.current.value = draft.title === 'Без названия' ? '' : draft.title;
-    if (editorRef.current) editorRef.current.innerHTML = draft.content;
+    if (titleRef.current)  titleRef.current.textContent  = draft.title === 'Без названия' ? '' : draft.title;
+    if (editorRef.current) editorRef.current.innerHTML   = draft.content;
     setPanelOpen(false);
     setSaveStatus('saved');
     setTimeout(() => { skipObserverRef.current = false; }, 50);
@@ -105,8 +165,8 @@ export default function WritePage() {
     skipObserverRef.current = true;
     const id = crypto.randomUUID();
     setDraftId(id);
-    if (titleRef.current) titleRef.current.value = '';
-    if (editorRef.current) editorRef.current.innerHTML = '';
+    if (titleRef.current)  titleRef.current.textContent  = '';
+    if (editorRef.current) editorRef.current.innerHTML   = '';
     setPanelOpen(false);
     setSaveStatus('saved');
     setTimeout(() => { skipObserverRef.current = false; }, 50);
@@ -187,14 +247,14 @@ export default function WritePage() {
     };
 
     editor.addEventListener('dragstart', onDragStart);
-    editor.addEventListener('dragend', onDragEnd);
-    editor.addEventListener('dragover', onDragOver);
-    editor.addEventListener('drop', onDrop);
+    editor.addEventListener('dragend',   onDragEnd);
+    editor.addEventListener('dragover',  onDragOver);
+    editor.addEventListener('drop',      onDrop);
     return () => {
       editor.removeEventListener('dragstart', onDragStart);
-      editor.removeEventListener('dragend', onDragEnd);
-      editor.removeEventListener('dragover', onDragOver);
-      editor.removeEventListener('drop', onDrop);
+      editor.removeEventListener('dragend',   onDragEnd);
+      editor.removeEventListener('dragover',  onDragOver);
+      editor.removeEventListener('drop',      onDrop);
     };
   }, [scheduleAutoSave]);
 
@@ -224,7 +284,6 @@ export default function WritePage() {
 
     figure.append(handle, img, caption);
 
-    // Insert after the current block-level cursor position
     const sel = window.getSelection();
     let inserted = false;
     if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
@@ -237,7 +296,6 @@ export default function WritePage() {
     }
     if (!inserted) editor.appendChild(figure);
 
-    // Ensure a paragraph after the figure
     if (!figure.nextElementSibling) {
       const p = document.createElement('p');
       p.innerHTML = '<br>';
@@ -252,6 +310,17 @@ export default function WritePage() {
     e.target.value = '';
   };
 
+  // Intercept image paste (Ctrl+V / mobile paste)
+  const handleEditorPaste = (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items);
+    const imageItem = items.find(item => item.type.startsWith('image/'));
+    if (imageItem) {
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (file) insertImage(file);
+    }
+  };
+
   // ── execCommand wrapper ──────────────────────────────────────
   const exec = (cmd: string, val?: string) => {
     document.execCommand(cmd, false, val);
@@ -259,6 +328,23 @@ export default function WritePage() {
   };
 
   const prevent = (e: React.MouseEvent) => e.preventDefault();
+
+  // ── Callout (blockquote) toggle ──────────────────────────────
+  const toggleCallout = (e: React.MouseEvent) => {
+    prevent(e);
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      let node: Node | null = sel.anchorNode;
+      while (node && node !== editorRef.current) {
+        if ((node as HTMLElement).tagName === 'BLOCKQUOTE') {
+          exec('formatBlock', 'P');
+          return;
+        }
+        node = node.parentNode;
+      }
+    }
+    exec('formatBlock', 'BLOCKQUOTE');
+  };
 
   // ── Save status label ────────────────────────────────────────
   const statusLabel =
@@ -279,7 +365,7 @@ export default function WritePage() {
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4 flex-shrink-0">
               <rect x="2" y="2" width="12" height="2" rx="1" />
-              <rect x="2" y="7" width="9" height="2" rx="1" />
+              <rect x="2" y="7" width="9"  height="2" rx="1" />
               <rect x="2" y="12" width="6" height="2" rx="1" />
             </svg>
             Мои статьи
@@ -305,13 +391,25 @@ export default function WritePage() {
           </div>
         </div>
 
-        {/* Title */}
-        <input
+        {/* Title — contenteditable so long titles wrap */}
+        <div
           ref={titleRef}
-          type="text"
-          placeholder="Заголовок"
-          onChange={scheduleAutoSave}
-          className="w-full text-3xl sm:text-4xl font-bold text-stone-900 placeholder:text-stone-200 outline-none bg-transparent mb-6 leading-tight"
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder="Заголовок"
+          onInput={scheduleAutoSave}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              editorRef.current?.focus();
+            }
+          }}
+          onPaste={(e) => {
+            e.preventDefault();
+            const text = e.clipboardData.getData('text/plain');
+            document.execCommand('insertText', false, text);
+          }}
+          className="w-full text-3xl sm:text-4xl font-bold text-stone-900 outline-none bg-transparent mb-6 leading-tight empty:before:content-[attr(data-placeholder)] empty:before:text-stone-200 empty:before:pointer-events-none"
         />
 
         {/* Toolbar */}
@@ -372,6 +470,12 @@ export default function WritePage() {
 
           <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
 
+          <ToolBtn onMouseDown={toggleCallout} title="Выноска">
+            <span className="text-base font-bold leading-none">»</span>
+          </ToolBtn>
+
+          <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
+
           <ToolBtn
             onMouseDown={(e) => { prevent(e); fileInputRef.current?.click(); }}
             title="Вставить изображение"
@@ -398,15 +502,12 @@ export default function WritePage() {
           contentEditable
           suppressContentEditableWarning
           data-placeholder="Начните писать..."
+          onPaste={handleEditorPaste}
           className="
+            write-editor
             min-h-[65vh] outline-none
             text-[16px] leading-relaxed text-stone-800
             empty:before:content-[attr(data-placeholder)] empty:before:text-stone-200 empty:before:pointer-events-none
-            [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-stone-900 [&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:leading-tight
-            [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-stone-900 [&_h3]:mt-4 [&_h3]:mb-1
-            [&_p]:mb-3
-            [&_ul]:list-disc [&_ul]:ml-5 [&_ul]:mb-3
-            [&_ol]:list-decimal [&_ol]:ml-5 [&_ol]:mb-3
           "
         />
       </main>
@@ -425,6 +526,69 @@ export default function WritePage() {
           </button>
         </div>
       </div>
+
+      {/* Mobile floating toolbar — appears above highlighted text */}
+      {floatPos && (
+        <div
+          className="fixed z-50 flex items-center gap-0.5 bg-stone-900 rounded-xl shadow-xl px-1.5 py-1"
+          style={{ top: floatPos.top, left: floatPos.left, width: 300 }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('bold'); }} title="Жирный">
+            <strong className="text-xs font-bold">B</strong>
+          </FloatBtn>
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('italic'); }} title="Курсив">
+            <em className="text-xs">I</em>
+          </FloatBtn>
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('underline'); }} title="Подчёркнутый">
+            <span className="underline text-xs">U</span>
+          </FloatBtn>
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('strikeThrough'); }} title="Зачёркнутый">
+            <span className="line-through text-xs">S</span>
+          </FloatBtn>
+
+          <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
+
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H2'); }} title="H2">
+            <span className="text-[10px] font-bold">H2</span>
+          </FloatBtn>
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'H3'); }} title="H3">
+            <span className="text-[10px] font-bold">H3</span>
+          </FloatBtn>
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('formatBlock', 'p'); }} title="Абзац">
+            <span className="text-[10px]">P</span>
+          </FloatBtn>
+
+          <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
+
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('insertUnorderedList'); }} title="Список">
+            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
+              <circle cx="1.5" cy="2.5" r="1.5" />
+              <rect x="4" y="1.5" width="7" height="1.5" rx="0.5" />
+              <circle cx="1.5" cy="6" r="1.5" />
+              <rect x="4" y="5" width="7" height="1.5" rx="0.5" />
+              <circle cx="1.5" cy="9.5" r="1.5" />
+              <rect x="4" y="8.5" width="7" height="1.5" rx="0.5" />
+            </svg>
+          </FloatBtn>
+          <FloatBtn onMouseDown={(e) => { prevent(e); exec('insertOrderedList'); }} title="Нумер. список">
+            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
+              <text x="0" y="4"  fontSize="4" fontFamily="monospace">1.</text>
+              <rect x="4" y="1.5" width="7" height="1.5" rx="0.5" />
+              <text x="0" y="7.5" fontSize="4" fontFamily="monospace">2.</text>
+              <rect x="4" y="5"   width="7" height="1.5" rx="0.5" />
+              <text x="0" y="11"  fontSize="4" fontFamily="monospace">3.</text>
+              <rect x="4" y="8.5" width="7" height="1.5" rx="0.5" />
+            </svg>
+          </FloatBtn>
+
+          <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
+
+          <FloatBtn onMouseDown={toggleCallout} title="Выноска">
+            <span className="text-xs font-bold">»</span>
+          </FloatBtn>
+        </div>
+      )}
 
       {panelOpen && (
         <DraftPanel
