@@ -22,7 +22,7 @@ app.use('/api/auth', authRouter);
 
 // Checks for a valid session cookie — used to protect personal routes
 function getSession(req) {
-  const sid = req.cookies?.sid;
+  const sid = req.cookies?.session; // cookie is named 'session', set by auth.js
   if (!sid) return null;
   return db.prepare('SELECT id FROM sessions WHERE id = ? AND expires_at > ?').get(sid, Date.now()) ?? null;
 }

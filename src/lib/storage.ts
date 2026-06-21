@@ -37,11 +37,12 @@ export async function getDrafts(): Promise<Draft[]> {
 }
 
 export async function saveDraft(draft: Draft): Promise<void> {
-  await fetch('/api/drafts', {
+  const res = await fetch('/api/drafts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(draft),
   });
+  if (!res.ok) throw new Error(`Save failed: ${res.status}`);
 }
 
 export async function deleteDraft(id: string): Promise<void> {

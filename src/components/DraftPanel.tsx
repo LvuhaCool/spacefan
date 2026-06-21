@@ -87,7 +87,7 @@ export default function DraftPanel({ drafts, currentId, onLoad, onDelete, onNew,
                 <button
                   onClick={(e) => { e.stopPropagation(); setConfirmDraft(draft); }}
                   title="Удалить черновик"
-                  className="absolute top-1/2 -translate-y-1/2 right-2.5 w-7 h-7 flex items-center justify-center rounded-lg text-stone-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+                  className="absolute top-1/2 -translate-y-1/2 right-2.5 w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                 >
                   <TrashIcon />
                 </button>

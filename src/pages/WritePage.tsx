@@ -4,7 +4,7 @@ import DraftPanel from '../components/DraftPanel';
 import { saveDraft, getDrafts, deleteDraft } from '../lib/storage';
 import type { Draft } from '../lib/storage';
 
-type SaveStatus = 'saved' | 'saving' | 'unsaved';
+type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
 
 interface ActiveFormats {
   bold: boolean;
@@ -134,15 +134,19 @@ export default function WritePage() {
   const doSave = useCallback(
     async (id: string) => {
       setSaveStatus('saving');
-      await saveDraft({
-        id,
-        title:     titleRef.current?.textContent?.trim() || 'Без названия',
-        content:   editorRef.current?.innerHTML ?? '',
-        updatedAt: Date.now(),
-        createdAt: createdAtRef.current,
-      });
-      setDrafts(await getDrafts());
-      setSaveStatus('saved');
+      try {
+        await saveDraft({
+          id,
+          title:     titleRef.current?.textContent?.trim() || 'Без названия',
+          content:   editorRef.current?.innerHTML ?? '',
+          updatedAt: Date.now(),
+          createdAt: createdAtRef.current,
+        });
+        setDrafts(await getDrafts());
+        setSaveStatus('saved');
+      } catch {
+        setSaveStatus('error');
+      }
     },
     []
   );
@@ -470,11 +474,10 @@ export default function WritePage() {
 
   // ── Save status label ────────────────────────────────────────
   const statusLabel =
-    saveStatus === 'saving'
-      ? 'Сохранение...'
-      : saveStatus === 'unsaved'
-      ? '●'
-      : 'Сохранено';
+    saveStatus === 'saving'  ? 'Сохранение...' :
+    saveStatus === 'unsaved' ? '●' :
+    saveStatus === 'error'   ? 'Ошибка сохранения' :
+    'Сохранено';
 
   // Shortcuts for active-state props (suppress highlighting when mixed)
   const af = activeFormats;
@@ -503,7 +506,9 @@ export default function WritePage() {
           <div className="flex items-center gap-3">
             <span
               className={`text-xs transition-colors ${
-                saveStatus === 'unsaved' ? 'text-amber-400' : 'text-stone-300'
+                saveStatus === 'unsaved' ? 'text-amber-400' :
+                saveStatus === 'error'   ? 'text-red-400' :
+                'text-stone-300'
               }`}
             >
               {statusLabel}
