@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DraftPanel from '../components/DraftPanel';
-import { saveDraft, getDrafts, deleteDraft, getDraft } from '../lib/storage';
+import { saveDraft, getDrafts, deleteDraft } from '../lib/storage';
 import type { Draft } from '../lib/storage';
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
@@ -76,9 +76,11 @@ export default function WritePage() {
   const editorRef    = useRef<HTMLDivElement>(null);
   const titleRef     = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const saveTimerRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const draggingFigRef   = useRef<HTMLElement | null>(null);
-  const skipObserverRef  = useRef(false);
+  const saveTimerRef    = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const draggingFigRef  = useRef<HTMLElement | null>(null);
+  const skipObserverRef = useRef(false);
+  // tracks the createdAt timestamp for the draft currently open in the editor
+  const createdAtRef    = useRef<number>(Date.now());
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -86,7 +88,7 @@ export default function WritePage() {
   const [draftId,       setDraftId]       = useState<string>(() => crypto.randomUUID());
   const [saveStatus,    setSaveStatus]    = useState<SaveStatus>('saved');
   const [panelOpen,     setPanelOpen]     = useState(false);
-  const [drafts,        setDrafts]        = useState<Draft[]>(() => getDrafts());
+  const [drafts,        setDrafts]        = useState<Draft[]>([]);
   const [floatPos,      setFloatPos]      = useState<{ top: number; left: number } | null>(null);
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_FORMATS);
 
@@ -123,19 +125,23 @@ export default function WritePage() {
     }
   }, []);
 
+  // ── Load drafts on mount ─────────────────────────────────────
+  useEffect(() => {
+    getDrafts().then(setDrafts);
+  }, []);
+
   // ── Auto-save ────────────────────────────────────────────────
   const doSave = useCallback(
-    (id: string) => {
+    async (id: string) => {
       setSaveStatus('saving');
-      const existing = getDraft(id);
-      saveDraft({
+      await saveDraft({
         id,
         title:     titleRef.current?.textContent?.trim() || 'Без названия',
         content:   editorRef.current?.innerHTML ?? '',
         updatedAt: Date.now(),
-        createdAt: existing?.createdAt ?? Date.now(),
+        createdAt: createdAtRef.current,
       });
-      setDrafts(getDrafts());
+      setDrafts(await getDrafts());
       setSaveStatus('saved');
     },
     []
@@ -212,6 +218,7 @@ export default function WritePage() {
     if (!state?.fromTitle) return;
     const newId = crypto.randomUUID();
     setDraftId(newId);
+    createdAtRef.current = Date.now();
     if (titleRef.current)  titleRef.current.textContent  = state.fromTitle;
     if (editorRef.current) editorRef.current.innerHTML   = '';
     setSaveStatus('unsaved');
@@ -222,6 +229,7 @@ export default function WritePage() {
   const loadDraft = useCallback((draft: Draft) => {
     skipObserverRef.current = true;
     setDraftId(draft.id);
+    createdAtRef.current = draft.createdAt;
     if (titleRef.current)  titleRef.current.textContent  = draft.title === 'Без названия' ? '' : draft.title;
     if (editorRef.current) editorRef.current.innerHTML   = draft.content;
     setPanelOpen(false);
@@ -233,6 +241,7 @@ export default function WritePage() {
     skipObserverRef.current = true;
     const id = crypto.randomUUID();
     setDraftId(id);
+    createdAtRef.current = Date.now();
     if (titleRef.current)  titleRef.current.textContent  = '';
     if (editorRef.current) editorRef.current.innerHTML   = '';
     setPanelOpen(false);
@@ -241,17 +250,16 @@ export default function WritePage() {
   }, []);
 
   const handleDeleteDraft = useCallback(
-    (id: string) => {
-      deleteDraft(id);
-      const remaining = getDrafts();
-      setDrafts(remaining);
+    async (id: string) => {
+      await deleteDraft(id);
+      setDrafts(await getDrafts());
       if (id === draftId) newDraft();
     },
     [draftId, newDraft]
   );
 
   const openPanel = () => {
-    setDrafts(getDrafts());
+    getDrafts().then(setDrafts);
     setPanelOpen(true);
   };
 

@@ -69,6 +69,14 @@ db.exec(`
     image_url      TEXT    NOT NULL DEFAULT '',
     fetched_at     INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS drafts (
+    id         TEXT    PRIMARY KEY,
+    title      TEXT    NOT NULL DEFAULT '',
+    content    TEXT    NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // ── Migrations for existing installs ──────────────────────────────────

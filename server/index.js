@@ -14,11 +14,18 @@ const PORT = process.env.PORT ?? 3001;
 // Trust Railway's proxy so req.ip is the real client IP
 app.set('trust proxy', 1);
 
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
 
 // ── API ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
+
+// Checks for a valid session cookie — used to protect personal routes
+function getSession(req) {
+  const sid = req.cookies?.sid;
+  if (!sid) return null;
+  return db.prepare('SELECT id FROM sessions WHERE id = ? AND expires_at > ?').get(sid, Date.now()) ?? null;
+}
 
 app.get('/api/news', (_req, res) => {
   const rows = db.prepare('SELECT * FROM news_feed ORDER BY id ASC').all();
@@ -77,6 +84,41 @@ app.delete('/api/news/:id', (req, res) => {
 app.post('/api/news/refresh', (_req, res) => {
   refreshFeed();
   res.json({ ok: true });
+});
+
+// ── Drafts (session-protected) ────────────────────────────────────────
+
+app.get('/api/drafts', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const rows = db.prepare('SELECT * FROM drafts ORDER BY updated_at DESC').all();
+  return res.json(rows.map(r => ({
+    id:        r.id,
+    title:     r.title,
+    content:   r.content,
+    updatedAt: r.updated_at,
+    createdAt: r.created_at,
+  })));
+});
+
+app.post('/api/drafts', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const { id, title, content, updatedAt, createdAt } = req.body ?? {};
+  if (!id) return res.status(400).json({ error: 'Missing id' });
+  db.prepare(`
+    INSERT INTO drafts (id, title, content, updated_at, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title      = excluded.title,
+      content    = excluded.content,
+      updated_at = excluded.updated_at
+  `).run(id, title ?? '', content ?? '', updatedAt ?? Date.now(), createdAt ?? Date.now());
+  return res.json({ ok: true });
+});
+
+app.delete('/api/drafts/:id', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+  db.prepare('DELETE FROM drafts WHERE id = ?').run(req.params.id);
+  return res.json({ ok: true });
 });
 
 // ── Serve built frontend in production ────────────────────────────────
