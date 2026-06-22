@@ -97,9 +97,13 @@ if (!newsColumns.includes('sfn_id')) {
       event_date TEXT    NOT NULL DEFAULT '',
       read_time  INTEGER NOT NULL DEFAULT 2,
       source_url TEXT    NOT NULL DEFAULT '',
-      fetched_at INTEGER NOT NULL
+      fetched_at INTEGER NOT NULL,
+      deleted    INTEGER NOT NULL DEFAULT 0
     )
   `);
+}
+if (!newsColumns.includes('deleted')) {
+  db.exec('ALTER TABLE news_feed ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
 }
 
 const launchColumns = db.prepare('PRAGMA table_info(launches)').all().map(c => c.name);
