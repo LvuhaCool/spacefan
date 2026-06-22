@@ -43,7 +43,9 @@ app.get('/api/news', (_req, res) => {
 });
 
 app.get('/api/launches', (_req, res) => {
-  const rows = db.prepare('SELECT * FROM launches ORDER BY net ASC').all();
+  const rows = db.prepare(
+    "SELECT * FROM launches WHERE status_abbrev NOT IN ('Success','Failure','Partial Failure') ORDER BY net ASC"
+  ).all();
   res.json(rows.map(r => ({
     id:           r.id,
     name:         r.name,
