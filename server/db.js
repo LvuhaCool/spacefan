@@ -102,9 +102,6 @@ if (!newsColumns.includes('sfn_id')) {
     )
   `);
 }
-if (!newsColumns.includes('deleted')) {
-  db.exec('ALTER TABLE news_feed ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
-}
 
 const launchColumns = db.prepare('PRAGMA table_info(launches)').all().map(c => c.name);
 if (!launchColumns.includes('landing_info')) {

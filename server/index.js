@@ -28,7 +28,7 @@ function getSession(req) {
 }
 
 app.get('/api/news', (_req, res) => {
-  const rows = db.prepare('SELECT * FROM news_feed WHERE deleted = 0 ORDER BY sfn_id DESC').all();
+  const rows = db.prepare('SELECT * FROM news_feed ORDER BY sfn_id DESC').all();
   res.json(rows.map(r => ({
     id:        r.id,
     title:     r.title,
@@ -79,7 +79,7 @@ app.get('/api/events', (_req, res) => {
 app.delete('/api/news/:id', (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
-  db.prepare('UPDATE news_feed SET deleted = 1 WHERE id = ?').run(id);
+  db.prepare('DELETE FROM news_feed WHERE id = ?').run(id);
   return res.json({ ok: true });
 });
 

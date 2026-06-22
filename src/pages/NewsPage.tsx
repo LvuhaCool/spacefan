@@ -8,6 +8,17 @@ import EventStrip from '../components/EventStrip';
 import EventModal, { type SpaceEvent } from '../components/EventModal';
 import type { Article } from '../data/articles';
 
+const DISMISSED_KEY = 'spacefan_dismissed_news';
+
+function loadDismissed(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]')); }
+  catch { return new Set(); }
+}
+
+function saveDismissed(set: Set<string>) {
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...set]));
+}
+
 export default function NewsPage() {
   const [articles, setArticles]             = useState<Article[]>([]);
   const [launches, setLaunches]             = useState<Launch[]>([]);
@@ -34,7 +45,8 @@ export default function NewsPage() {
         launchRes.ok ? (launchRes.json() as Promise<Launch[]>) : Promise.resolve([]),
         eventRes.ok  ? (eventRes.json()  as Promise<SpaceEvent[]>) : Promise.resolve([]),
       ]);
-      setArticles(newsData);
+      const dismissed = loadDismissed();
+      setArticles(newsData.filter(a => !dismissed.has(a.sourceUrl ?? String(a.id))));
       setLaunches(launchData);
       setEvents(eventData);
       setError('');
@@ -60,10 +72,14 @@ export default function NewsPage() {
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
-    const id = deleteTarget.id;
+    const { id, sourceUrl } = deleteTarget;
+    const key = sourceUrl ?? String(id);
+    const dismissed = loadDismissed();
+    dismissed.add(key);
+    saveDismissed(dismissed);
     setDeleteTarget(null);
     setArticles(prev => prev.filter(a => a.id !== id));
-    await fetch(`/api/news/${id}`, { method: 'DELETE' });
+    fetch(`/api/news/${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
   const handleWriteAbout = (title: string) => {
@@ -144,7 +160,7 @@ export default function NewsPage() {
           <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
             <h2 className="text-base font-bold text-stone-900 mb-2">Удалить статью?</h2>
             <p className="text-sm text-stone-500 mb-1 line-clamp-2">{deleteTarget.title}</p>
-            <p className="text-xs text-stone-400 mb-6">Статья исчезнет из ленты. Вернётся при следующем обновлении.</p>
+            <p className="text-xs text-stone-400 mb-6">Статья исчезнет навсегда и не вернётся при обновлении.</p>
             <div className="flex gap-3">
               <button
                 onClick={handleDeleteConfirm}
