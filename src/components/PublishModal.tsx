@@ -23,23 +23,97 @@ function parseContent(html: string): { bodyHtml: string; images: Image[] } {
   return { bodyHtml: doc.body.innerHTML, images };
 }
 
+function transformForTelegram(title: string, bodyHtml: string): string {
+  const doc  = new DOMParser().parseFromString(bodyHtml, 'text/html');
+  const body = doc.body;
+
+  // ol → numbered plain paragraphs
+  body.querySelectorAll('ol').forEach((ol) => {
+    const frag = doc.createDocumentFragment();
+    ol.querySelectorAll('li').forEach((li, i) => {
+      const p = doc.createElement('p');
+      p.innerHTML = `${i + 1}. ${li.innerHTML}`;
+      frag.appendChild(p);
+    });
+    ol.replaceWith(frag);
+  });
+
+  // ul → bullet plain paragraphs
+  body.querySelectorAll('ul').forEach((ul) => {
+    const frag = doc.createDocumentFragment();
+    ul.querySelectorAll('li').forEach((li) => {
+      const p = doc.createElement('p');
+      p.innerHTML = `• ${li.innerHTML}`;
+      frag.appendChild(p);
+    });
+    ul.replaceWith(frag);
+  });
+
+  // h2 / h3 → bold paragraph
+  body.querySelectorAll('h2, h3').forEach((h) => {
+    const p      = doc.createElement('p');
+    const strong = doc.createElement('strong');
+    strong.innerHTML = h.innerHTML;
+    p.appendChild(strong);
+    h.replaceWith(p);
+  });
+
+  // blockquote → italic paragraph
+  body.querySelectorAll('blockquote').forEach((bq) => {
+    const p  = doc.createElement('p');
+    const em = doc.createElement('em');
+    em.innerHTML = bq.innerHTML;
+    p.appendChild(em);
+    bq.replaceWith(p);
+  });
+
+  // Strip trailing empty / whitespace-only nodes
+  while (body.lastChild) {
+    const node = body.lastChild;
+    const text = node.textContent?.trim() ?? '';
+    const inner = node.nodeType === Node.ELEMENT_NODE
+      ? (node as Element).innerHTML.replace(/<br\s*\/?>/gi, '').trim()
+      : '';
+    if (text === '' || inner === '') {
+      body.removeChild(node);
+    } else {
+      break;
+    }
+  }
+
+  // Prepend bold title + blank spacer line
+  if (title) {
+    const spacer = doc.createElement('p');
+    spacer.innerHTML = '<br>';
+    body.insertBefore(spacer, body.firstChild);
+
+    const titleP      = doc.createElement('p');
+    const titleStrong = doc.createElement('strong');
+    titleStrong.textContent = title;
+    titleP.appendChild(titleStrong);
+    body.insertBefore(titleP, body.firstChild);
+  }
+
+  return body.innerHTML;
+}
+
 export default function PublishModal({ title, content, onClose }: Props) {
   const [tab,         setTab]         = useState<'telegram' | 'dzen'>('telegram');
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
 
-  const titleEditRef = useRef<HTMLDivElement>(null);
-  const bodyEditRef  = useRef<HTMLDivElement>(null);
+  const bodyEditRef = useRef<HTMLDivElement>(null);
 
   const { bodyHtml, images } = parseContent(content);
 
-  // Set initial editable content on mount
+  // Set transformed content once on mount
   useEffect(() => {
-    if (titleEditRef.current) titleEditRef.current.textContent = title;
-    if (bodyEditRef.current)  bodyEditRef.current.innerHTML   = bodyHtml;
+    if (bodyEditRef.current) {
+      bodyEditRef.current.innerHTML = transformForTelegram(title, bodyHtml);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Lock body scroll and handle Escape
+  // Lock scroll + Escape handler
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -89,27 +163,12 @@ export default function PublishModal({ title, content, onClose }: Props) {
           </div>
         </div>
 
-        {/* Scrollable content */}
+        {/* Scrollable content — both tabs always mounted, hidden via CSS to preserve edits */}
         <div className="flex-1 overflow-y-auto">
-          {tab === 'dzen' ? (
-            <div className="flex items-center justify-center h-48">
-              <p className="text-stone-400 font-medium text-sm">Пока что не работает!</p>
-            </div>
-          ) : (
-            <div className="max-w-3xl mx-auto px-6 py-6 space-y-4">
-              {/* Editable bold heading */}
-              <div
-                ref={titleEditRef}
-                contentEditable
-                suppressContentEditableWarning
-                data-placeholder="Заголовок"
-                className="
-                  font-bold text-stone-900 text-[15px] leading-snug outline-none
-                  empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300
-                "
-              />
 
-              {/* Editable body */}
+          {/* Telegram tab */}
+          <div className={tab === 'telegram' ? '' : 'hidden'}>
+            <div className="max-w-3xl mx-auto px-6 py-6">
               <div
                 ref={bodyEditRef}
                 contentEditable
@@ -118,18 +177,16 @@ export default function PublishModal({ title, content, onClose }: Props) {
                 className="
                   text-[15px] text-stone-800 leading-relaxed outline-none
                   [&_p]:mb-3 [&_p:last-child]:mb-0
-                  [&_h2]:font-bold [&_h2]:mb-2 [&_h2]:mt-4
-                  [&_h3]:font-bold [&_h3]:mb-1 [&_h3]:mt-3
-                  [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:mb-3
-                  [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:mb-3
-                  [&_blockquote]:border-l-2 [&_blockquote]:border-stone-200 [&_blockquote]:pl-3 [&_blockquote]:text-stone-600
+                  [&_strong]:font-bold
+                  [&_em]:italic
+                  [&_u]:underline
+                  [&_s]:line-through
                   empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300
                 "
               />
 
-              {/* Image gallery */}
               {images.length > 0 && (
-                <div className="pt-2">
+                <div className="pt-4">
                   <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-2">
                     Медиа · {images.length}
                   </p>
@@ -155,10 +212,18 @@ export default function PublishModal({ title, content, onClose }: Props) {
                 </div>
               )}
             </div>
-          )}
+          </div>
+
+          {/* Dzen tab */}
+          <div className={tab === 'dzen' ? '' : 'hidden'}>
+            <div className="flex items-center justify-center h-48">
+              <p className="text-stone-400 font-medium text-sm">Пока что не работает!</p>
+            </div>
+          </div>
+
         </div>
 
-        {/* Bottom publish button — always visible */}
+        {/* Bottom publish button */}
         <div className="flex-shrink-0 px-6 pb-6 pt-3 border-t border-stone-100">
           <button className="w-full max-w-3xl mx-auto block py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors">
             Опубликовать
