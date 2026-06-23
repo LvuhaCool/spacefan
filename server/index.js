@@ -138,42 +138,44 @@ app.post('/api/publish/telegram', async (req, res) => {
   const api = `https://api.telegram.org/bot${token}`;
 
   try {
-    // 1. Send text
-    const msgRes = await fetch(`${api}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-    });
-    if (!msgRes.ok) {
-      const err = await msgRes.json();
-      throw new Error(err.description ?? 'sendMessage failed');
-    }
-
-    // 2. Send images in chunks of 10 (Telegram limit per sendMediaGroup)
     const imgs = Array.isArray(images) ? images : [];
-    for (let i = 0; i < imgs.length; i += 10) {
-      const chunk = imgs.slice(i, i + 10);
-      const form  = new FormData();
-      form.append('chat_id', chatId);
 
-      if (chunk.length === 1) {
-        const buf = Buffer.from(chunk[0].src.split(',')[1], 'base64');
-        form.append('photo', new Blob([buf]), 'photo.jpg');
-        if (chunk[0].caption) form.append('caption', chunk[0].caption);
-        const r = await fetch(`${api}/sendPhoto`, { method: 'POST', body: form });
-        if (!r.ok) { const e = await r.json(); throw new Error(e.description ?? 'sendPhoto failed'); }
-      } else {
-        const media = chunk.map((img, j) => ({
-          type: 'photo', media: `attach://photo${j}`,
-          ...(img.caption ? { caption: img.caption } : {}),
-        }));
-        form.append('media', JSON.stringify(media));
-        chunk.forEach((img, j) => {
-          const buf = Buffer.from(img.src.split(',')[1], 'base64');
-          form.append(`photo${j}`, new Blob([buf]), `photo${j}.jpg`);
-        });
-        const r = await fetch(`${api}/sendMediaGroup`, { method: 'POST', body: form });
-        if (!r.ok) { const e = await r.json(); throw new Error(e.description ?? 'sendMediaGroup failed'); }
+    if (imgs.length === 0) {
+      // Text only → sendMessage
+      const r = await fetch(`${api}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.description ?? 'sendMessage failed'); }
+    } else {
+      // Text + images → caption on first photo, rest of chunks text-free
+      for (let i = 0; i < imgs.length; i += 10) {
+        const chunk     = imgs.slice(i, i + 10);
+        const isFirst   = i === 0;
+        const form      = new FormData();
+        form.append('chat_id', chatId);
+
+        if (chunk.length === 1) {
+          const buf = Buffer.from(chunk[0].src.split(',')[1], 'base64');
+          form.append('photo', new Blob([buf]), 'photo.jpg');
+          if (isFirst) { form.append('caption', text); form.append('parse_mode', 'HTML'); }
+          const r = await fetch(`${api}/sendPhoto`, { method: 'POST', body: form });
+          if (!r.ok) { const e = await r.json(); throw new Error(e.description ?? 'sendPhoto failed'); }
+        } else {
+          const media = chunk.map((img, j) => ({
+            type: 'photo',
+            media: `attach://photo${j}`,
+            ...(isFirst && j === 0 ? { caption: text, parse_mode: 'HTML' } : {}),
+          }));
+          form.append('media', JSON.stringify(media));
+          chunk.forEach((img, j) => {
+            const buf = Buffer.from(img.src.split(',')[1], 'base64');
+            form.append(`photo${j}`, new Blob([buf]), `photo${j}.jpg`);
+          });
+          const r = await fetch(`${api}/sendMediaGroup`, { method: 'POST', body: form });
+          if (!r.ok) { const e = await r.json(); throw new Error(e.description ?? 'sendMediaGroup failed'); }
+        }
       }
     }
 
