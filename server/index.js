@@ -123,6 +123,67 @@ app.delete('/api/drafts/:id', (req, res) => {
   return res.json({ ok: true });
 });
 
+// ── Telegram publishing ───────────────────────────────────────────────
+
+app.post('/api/publish/telegram', async (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { text, images } = req.body ?? {};
+  if (!text) return res.status(400).json({ error: 'Missing text' });
+
+  const token  = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHANNEL_ID;
+  if (!token || !chatId) return res.status(500).json({ error: 'Telegram not configured' });
+
+  const api = `https://api.telegram.org/bot${token}`;
+
+  try {
+    // 1. Send text
+    const msgRes = await fetch(`${api}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+    });
+    if (!msgRes.ok) {
+      const err = await msgRes.json();
+      throw new Error(err.description ?? 'sendMessage failed');
+    }
+
+    // 2. Send images in chunks of 10 (Telegram limit per sendMediaGroup)
+    const imgs = Array.isArray(images) ? images : [];
+    for (let i = 0; i < imgs.length; i += 10) {
+      const chunk = imgs.slice(i, i + 10);
+      const form  = new FormData();
+      form.append('chat_id', chatId);
+
+      if (chunk.length === 1) {
+        const buf = Buffer.from(chunk[0].src.split(',')[1], 'base64');
+        form.append('photo', new Blob([buf]), 'photo.jpg');
+        if (chunk[0].caption) form.append('caption', chunk[0].caption);
+        const r = await fetch(`${api}/sendPhoto`, { method: 'POST', body: form });
+        if (!r.ok) { const e = await r.json(); throw new Error(e.description ?? 'sendPhoto failed'); }
+      } else {
+        const media = chunk.map((img, j) => ({
+          type: 'photo', media: `attach://photo${j}`,
+          ...(img.caption ? { caption: img.caption } : {}),
+        }));
+        form.append('media', JSON.stringify(media));
+        chunk.forEach((img, j) => {
+          const buf = Buffer.from(img.src.split(',')[1], 'base64');
+          form.append(`photo${j}`, new Blob([buf]), `photo${j}.jpg`);
+        });
+        const r = await fetch(`${api}/sendMediaGroup`, { method: 'POST', body: form });
+        if (!r.ok) { const e = await r.json(); throw new Error(e.description ?? 'sendMediaGroup failed'); }
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[telegram] publish error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Serve built frontend in production ────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
   const dist = join(__dirname, '../dist');

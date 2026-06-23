@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface Image {
   src: string;
@@ -97,9 +97,35 @@ function transformForTelegram(title: string, bodyHtml: string): string {
   return body.innerHTML;
 }
 
+type PublishState = 'idle' | 'sending' | 'sent' | 'error';
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function toTelegramHtml(el: HTMLElement): string {
+  function walk(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent ?? '');
+    const e = node as Element;
+    const inner = Array.from(e.childNodes).map(walk).join('');
+    switch (e.tagName?.toLowerCase()) {
+      case 'b': case 'strong': return `<b>${inner}</b>`;
+      case 'i': case 'em':     return `<i>${inner}</i>`;
+      case 'u':                return `<u>${inner}</u>`;
+      case 's': case 'del': case 'strike': return `<s>${inner}</s>`;
+      case 'br':  return '\n';
+      case 'p':   return inner ? inner + '\n\n' : '';
+      default:    return inner;
+    }
+  }
+  return Array.from(el.childNodes).map(walk).join('').trim();
+}
+
 export default function PublishModal({ title, content, onClose }: Props) {
-  const [tab,         setTab]         = useState<'telegram' | 'dzen'>('telegram');
-  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const [tab,          setTab]          = useState<'telegram' | 'dzen'>('telegram');
+  const [lightboxIdx,  setLightboxIdx]  = useState<number | null>(null);
+  const [publishState, setPublishState] = useState<PublishState>('idle');
+  const [errorMsg,     setErrorMsg]     = useState('');
 
   const bodyEditRef = useRef<HTMLDivElement>(null);
 
@@ -112,6 +138,30 @@ export default function PublishModal({ title, content, onClose }: Props) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handlePublish = useCallback(async () => {
+    if (tab === 'dzen' || publishState === 'sending') return;
+    if (!bodyEditRef.current) return;
+
+    const text = toTelegramHtml(bodyEditRef.current);
+    setPublishState('sending');
+    setErrorMsg('');
+
+    try {
+      const res = await fetch('/api/publish/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, images }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Ошибка сервера');
+      setPublishState('sent');
+      setTimeout(() => setPublishState('idle'), 3000);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Неизвестная ошибка');
+      setPublishState('error');
+    }
+  }, [tab, publishState, images]);
 
   // Lock scroll + Escape handler
   useEffect(() => {
@@ -225,8 +275,24 @@ export default function PublishModal({ title, content, onClose }: Props) {
 
         {/* Bottom publish button */}
         <div className="flex-shrink-0 px-6 pb-6 pt-3 border-t border-stone-100">
-          <button className="w-full max-w-3xl mx-auto block py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors">
-            Опубликовать
+          {publishState === 'error' && (
+            <p className="text-xs text-red-500 text-center mb-2">{errorMsg}</p>
+          )}
+          <button
+            onClick={handlePublish}
+            disabled={tab === 'dzen' || publishState === 'sending'}
+            className={`w-full max-w-3xl mx-auto block py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
+              publishState === 'sent'
+                ? 'bg-green-600 text-white'
+                : publishState === 'error'
+                ? 'bg-red-600 text-white hover:bg-red-700'
+                : 'bg-stone-900 text-white hover:bg-stone-800'
+            }`}
+          >
+            {publishState === 'sending' ? 'Отправляем…'
+              : publishState === 'sent'  ? 'Отправлено ✓'
+              : publishState === 'error' ? 'Попробовать снова'
+              : 'Опубликовать'}
           </button>
         </div>
       </div>
