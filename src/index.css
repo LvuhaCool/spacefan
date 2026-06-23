@@ -114,6 +114,8 @@ body {
   font-style: normal;
 }
 
+.write-editor a { color: #2563eb; text-decoration: underline; cursor: pointer; }
+
 /* Drop indicator */
 [data-drop-before]::before {
   content: '';

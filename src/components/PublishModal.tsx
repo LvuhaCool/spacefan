@@ -113,9 +113,17 @@ function toTelegramHtml(el: HTMLElement): string {
       case 'i': case 'em':     return `<i>${inner}</i>`;
       case 'u':                return `<u>${inner}</u>`;
       case 's': case 'del': case 'strike': return `<s>${inner}</s>`;
-      case 'br':  return '\n';
-      case 'p':   return inner ? inner + '\n\n' : '';
-      default:    return inner;
+      case 'a': {
+        const href = (e as HTMLAnchorElement).href;
+        return href ? `<a href="${href}">${inner}</a>` : inner;
+      }
+      case 'br': return '\n';
+      case 'p': {
+        // Empty paragraph (just a br or whitespace) = blank line
+        const trimmed = inner.replace(/\n/g, '').trim();
+        return trimmed ? trimmed + '\n' : '\n';
+      }
+      default: return inner;
     }
   }
   return Array.from(el.childNodes).map(walk).join('').trim();
@@ -126,6 +134,7 @@ export default function PublishModal({ title, content, onClose }: Props) {
   const [lightboxIdx,  setLightboxIdx]  = useState<number | null>(null);
   const [publishState, setPublishState] = useState<PublishState>('idle');
   const [errorMsg,     setErrorMsg]     = useState('');
+  const [charCount,    setCharCount]    = useState(0);
 
   const bodyEditRef = useRef<HTMLDivElement>(null);
 
@@ -135,6 +144,7 @@ export default function PublishModal({ title, content, onClose }: Props) {
   useEffect(() => {
     if (bodyEditRef.current) {
       bodyEditRef.current.innerHTML = transformForTelegram(title, bodyHtml);
+      setCharCount(bodyEditRef.current.textContent?.length ?? 0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -224,6 +234,7 @@ export default function PublishModal({ title, content, onClose }: Props) {
                 contentEditable
                 suppressContentEditableWarning
                 data-placeholder="Текст поста…"
+                onInput={() => setCharCount(bodyEditRef.current?.textContent?.length ?? 0)}
                 className="
                   text-[15px] text-stone-800 leading-relaxed outline-none
                   [&_p]:mb-3 [&_p:last-child]:mb-0
@@ -275,6 +286,11 @@ export default function PublishModal({ title, content, onClose }: Props) {
 
         {/* Bottom publish button */}
         <div className="flex-shrink-0 px-6 pb-6 pt-3 border-t border-stone-100">
+          <div className="flex justify-end mb-1.5">
+            <span className={`text-xs tabular-nums ${images.length > 0 && charCount > 1024 ? 'text-red-400 font-medium' : 'text-stone-300'}`}>
+              {charCount.toLocaleString()}{images.length > 0 ? ' / 1024' : ' симв.'}
+            </span>
+          </div>
           {publishState === 'error' && (
             <p className="text-xs text-red-500 text-center mb-2">{errorMsg}</p>
           )}

@@ -12,13 +12,14 @@ interface ActiveFormats {
   italic: boolean;
   underline: boolean;
   strikeThrough: boolean;
-  blockType: string; // 'h2' | 'h3' | 'blockquote' | 'p' | ''
-  mixed: boolean;    // selection spans multiple formatting states
+  blockType: string;
+  mixed: boolean;
+  link: boolean;
 }
 
 const EMPTY_FORMATS: ActiveFormats = {
   bold: false, italic: false, underline: false,
-  strikeThrough: false, blockType: '', mixed: false,
+  strikeThrough: false, blockType: '', mixed: false, link: false,
 };
 
 function ToolBtn({
@@ -92,15 +93,29 @@ export default function WritePage() {
   const [drafts,        setDrafts]        = useState<Draft[]>([]);
   const [floatPos,      setFloatPos]      = useState<{ top: number; left: number } | null>(null);
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_FORMATS);
-  const [publishData,   setPublishData]   = useState<{ title: string; content: string } | null>(null);
+  const [publishData,    setPublishData]    = useState<{ title: string; content: string } | null>(null);
+  const [linkPromptOpen, setLinkPromptOpen] = useState(false);
+  const [linkUrl,        setLinkUrl]        = useState('');
+  const [charCount,      setCharCount]      = useState(0);
+  const savedRangeRef = useRef<Range | null>(null);
 
   // ── Active format detection ──────────────────────────────────
   const updateActiveFormats = useCallback(() => {
     const sel    = window.getSelection();
     const editor = editorRef.current;
 
+    // Detect link even on collapsed cursor
+    let link = false;
+    if (sel && sel.rangeCount && editor?.contains(sel.anchorNode)) {
+      let n: Node | null = sel.anchorNode;
+      while (n && n !== editor) {
+        if ((n as HTMLElement).tagName === 'A') { link = true; break; }
+        n = n.parentNode;
+      }
+    }
+
     if (!sel || sel.isCollapsed || !sel.rangeCount || !editor?.contains(sel.anchorNode)) {
-      setActiveFormats(EMPTY_FORMATS);
+      setActiveFormats({ ...EMPTY_FORMATS, link });
       return;
     }
 
@@ -111,7 +126,6 @@ export default function WritePage() {
       const strikeThrough = document.queryCommandState('strikeThrough');
       const blockType    = document.queryCommandValue('formatBlock').toLowerCase();
 
-      // Detect mixed: selection has SOME but not ALL of a format
       const range    = sel.getRangeAt(0);
       const fragment = range.cloneContents();
 
@@ -121,7 +135,7 @@ export default function WritePage() {
       if (!underline   && fragment.querySelector('u'))                    mixed = true;
       if (!strikeThrough && (fragment.querySelector('s, strike')))        mixed = true;
 
-      setActiveFormats({ bold, italic, underline, strikeThrough, blockType, mixed });
+      setActiveFormats({ bold, italic, underline, strikeThrough, blockType, mixed, link });
     } catch {
       setActiveFormats(EMPTY_FORMATS);
     }
@@ -155,6 +169,7 @@ export default function WritePage() {
 
   const scheduleAutoSave = useCallback(() => {
     setSaveStatus('unsaved');
+    setCharCount((titleRef.current?.textContent?.length ?? 0) + (editorRef.current?.textContent?.length ?? 0));
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => doSave(draftId), 700);
   }, [draftId, doSave]);
@@ -240,7 +255,10 @@ export default function WritePage() {
     if (editorRef.current) editorRef.current.innerHTML   = draft.content;
     setPanelOpen(false);
     setSaveStatus('saved');
-    setTimeout(() => { skipObserverRef.current = false; }, 50);
+    setTimeout(() => {
+      setCharCount((titleRef.current?.textContent?.length ?? 0) + (editorRef.current?.textContent?.length ?? 0));
+      skipObserverRef.current = false;
+    }, 50);
   }, []);
 
   const newDraft = useCallback(() => {
@@ -252,6 +270,7 @@ export default function WritePage() {
     if (editorRef.current) editorRef.current.innerHTML   = '';
     setPanelOpen(false);
     setSaveStatus('saved');
+    setCharCount(0);
     setTimeout(() => { skipObserverRef.current = false; }, 50);
   }, []);
 
@@ -416,9 +435,31 @@ export default function WritePage() {
 
   const prevent = (e: React.MouseEvent) => e.preventDefault();
 
+  // ── Link prompt ──────────────────────────────────────────────
+  const openLinkPrompt = () => {
+    if (activeFormats.link) { exec('unlink'); return; }
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) savedRangeRef.current = sel.getRangeAt(0).cloneRange();
+    setLinkUrl('');
+    setLinkPromptOpen(true);
+  };
+
+  const applyLink = (url: string) => {
+    setLinkPromptOpen(false);
+    if (!url.trim()) return;
+    const range = savedRangeRef.current;
+    if (range) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+    exec('createLink', /^https?:\/\//i.test(url) ? url : `https://${url}`);
+    savedRangeRef.current = null;
+  };
+
   // ── Callout (blockquote) toggle ──────────────────────────────
-  const toggleCallout = (e: React.MouseEvent) => {
-    prevent(e);
+  const toggleCallout = (e?: React.MouseEvent) => {
+    if (e) prevent(e);
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
       let node: Node | null = sel.anchorNode;
@@ -433,8 +474,20 @@ export default function WritePage() {
     exec('formatBlock', 'BLOCKQUOTE');
   };
 
-  // ── Editor keydown: exit blockquote on second Enter ──────────
+  // ── Editor keydown: shortcuts + blockquote exit ──────────────
   const handleEditorKeyDown = (e: React.KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key.toLowerCase()) {
+        case 'b': e.preventDefault(); exec('bold'); return;
+        case 'i': e.preventDefault(); exec('italic'); return;
+        case 'u': e.preventDefault(); exec('underline'); return;
+        case 't': e.preventDefault(); exec('strikeThrough'); return;
+        case '2': e.preventDefault(); exec('formatBlock', 'H2'); return;
+        case '3': e.preventDefault(); exec('formatBlock', 'H3'); return;
+        case 'o': e.preventDefault(); toggleCallout(); return;
+        case 'k': e.preventDefault(); openLinkPrompt(); return;
+      }
+    }
     if (e.key !== 'Enter') return;
 
     const sel = window.getSelection();
@@ -506,6 +559,7 @@ export default function WritePage() {
           </button>
 
           <div className="flex items-center gap-3">
+            <span className="text-xs text-stone-300 tabular-nums">{charCount.toLocaleString()} симв.</span>
             <span
               className={`text-xs transition-colors ${
                 saveStatus === 'unsaved' ? 'text-amber-400' :
@@ -599,6 +653,12 @@ export default function WritePage() {
 
           <ToolBtn active={af.blockType === 'blockquote' && noMix} onMouseDown={toggleCallout} title="Выноска «»">
             <span className="text-sm font-bold leading-none">«»</span>
+          </ToolBtn>
+          <ToolBtn active={af.link} onMouseDown={(e) => { prevent(e); openLinkPrompt(); }} title="Ссылка (Ctrl+K)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M6.5 9.5a3.182 3.182 0 004.5 0l2-2a3.182 3.182 0 00-4.5-4.5L7 4.5" />
+              <path d="M9.5 6.5a3.182 3.182 0 00-4.5 0l-2 2a3.182 3.182 0 004.5 4.5L9.5 11" />
+            </svg>
           </ToolBtn>
 
           <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />
@@ -723,9 +783,50 @@ export default function WritePage() {
 
             <div className="w-px h-4 bg-white/20 mx-0.5 flex-shrink-0" />
 
-            <FloatBtn active={af.blockType === 'blockquote' && noMix} onMouseDown={toggleCallout} title="Выноска">
+            <FloatBtn active={af.blockType === 'blockquote' && noMix} onMouseDown={(e) => toggleCallout(e)} title="Выноска">
               <span className="text-xs font-bold">«»</span>
             </FloatBtn>
+            <FloatBtn active={af.link} onMouseDown={(e) => { prevent(e); openLinkPrompt(); }} title="Ссылка">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                <path d="M4.5 7.5a2.5 2.5 0 003.5 0l1.5-1.5a2.5 2.5 0 00-3.5-3.5L5 3.5" />
+                <path d="M7.5 4.5a2.5 2.5 0 00-3.5 0L2.5 6A2.5 2.5 0 006 9.5L6.5 9" />
+              </svg>
+            </FloatBtn>
+          </div>
+        </div>
+      )}
+
+      {linkPromptOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setLinkPromptOpen(false)} />
+          <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="text-base font-semibold text-stone-900 mb-3">Вставить ссылку</h3>
+            <input
+              autoFocus
+              type="url"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyLink(linkUrl);
+                if (e.key === 'Escape') setLinkPromptOpen(false);
+              }}
+              placeholder="https://..."
+              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-stone-400 mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => applyLink(linkUrl)}
+                className="flex-1 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors"
+              >
+                Вставить
+              </button>
+              <button
+                onClick={() => setLinkPromptOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
           </div>
         </div>
       )}
