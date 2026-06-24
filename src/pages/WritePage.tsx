@@ -365,6 +365,16 @@ export default function WritePage() {
     const editor = editorRef.current;
     if (!editor) return;
 
+    // Capture insertion point NOW (synchronously) before the async FileReader,
+    // because the selection may change or clear by the time the read completes.
+    let insertAfterNode: Node | null = null;
+    const sel0 = window.getSelection();
+    if (sel0 && sel0.rangeCount > 0 && editor.contains(sel0.anchorNode)) {
+      let node: Node | null = sel0.anchorNode;
+      while (node && node.parentNode !== editor) node = node.parentNode;
+      if (node && node.parentNode === editor) insertAfterNode = node;
+    }
+
     // Base64 so the image survives across devices, tabs, and sessions
     const url = await new Promise<string>((resolve) => {
       const reader = new FileReader();
@@ -391,17 +401,11 @@ export default function WritePage() {
 
     figure.append(handle, img, caption);
 
-    const sel = window.getSelection();
-    let inserted = false;
-    if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-      let node: Node | null = sel.anchorNode;
-      while (node && node.parentNode !== editor) node = node.parentNode;
-      if (node && node.parentNode === editor) {
-        (node as Element).after(figure);
-        inserted = true;
-      }
+    if (insertAfterNode) {
+      (insertAfterNode as Element).after(figure);
+    } else {
+      editor.appendChild(figure);
     }
-    if (!inserted) editor.appendChild(figure);
 
     if (!figure.nextElementSibling) {
       const p = document.createElement('p');
@@ -493,6 +497,23 @@ export default function WritePage() {
 
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
+
+    // If cursor is inside a link, move it outside before Enter is processed so
+    // the browser doesn't corrupt or duplicate the <a> element.
+    {
+      let n: Node | null = sel.anchorNode;
+      while (n && n !== editorRef.current) {
+        if ((n as HTMLElement).tagName === 'A') {
+          const r = document.createRange();
+          r.setStartAfter(n);
+          r.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(r);
+          break;
+        }
+        n = n.parentNode;
+      }
+    }
 
     // Walk up to find enclosing blockquote
     let node: Node | null = sel.anchorNode;
