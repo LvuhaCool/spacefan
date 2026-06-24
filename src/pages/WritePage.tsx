@@ -413,6 +413,18 @@ export default function WritePage() {
       figure.after(p);
     }
 
+    // Park the cursor in the paragraph right after the image so the next paste
+    // (or keystroke) lands there, not at the old position or the document end.
+    const afterFig = figure.nextElementSibling;
+    if (afterFig) {
+      const r = document.createRange();
+      r.setStart(afterFig, 0);
+      r.collapse(true);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(r);
+      editor.focus();
+    }
+
     scheduleAutoSave();
   };
 
@@ -498,18 +510,26 @@ export default function WritePage() {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
 
-    // If cursor is inside a link, move it outside before Enter is processed so
-    // the browser doesn't corrupt or duplicate the <a> element.
+    // If cursor is inside a link, take over: browsers corrupt/drop <a> on Enter.
+    // Find the block-level child of the editor, insert a fresh <p> after it.
     {
       let n: Node | null = sel.anchorNode;
       while (n && n !== editorRef.current) {
         if ((n as HTMLElement).tagName === 'A') {
+          e.preventDefault();
+          let block: Node = n;
+          while (block.parentNode !== editorRef.current) block = block.parentNode!;
+          const newP = document.createElement('p');
+          newP.innerHTML = '<br>';
+          (block as Element).after(newP);
           const r = document.createRange();
-          r.setStartAfter(n);
+          r.setStart(newP, 0);
           r.collapse(true);
           sel.removeAllRanges();
           sel.addRange(r);
-          break;
+          editorRef.current?.focus();
+          scheduleAutoSave();
+          return;
         }
         n = n.parentNode;
       }
