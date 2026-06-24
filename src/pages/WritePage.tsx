@@ -120,11 +120,12 @@ export default function WritePage() {
     }
 
     try {
-      const bold         = document.queryCommandState('bold');
-      const italic       = document.queryCommandState('italic');
-      const underline    = document.queryCommandState('underline');
+      const blockType     = document.queryCommandValue('formatBlock').toLowerCase();
+      const isHeading     = blockType === 'h2' || blockType === 'h3';
+      const bold          = isHeading ? false : document.queryCommandState('bold');
+      const italic        = document.queryCommandState('italic');
+      const underline     = document.queryCommandState('underline');
       const strikeThrough = document.queryCommandState('strikeThrough');
-      const blockType    = document.queryCommandValue('formatBlock').toLowerCase();
 
       const range    = sel.getRangeAt(0);
       const fragment = range.cloneContents();
