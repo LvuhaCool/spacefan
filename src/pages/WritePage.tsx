@@ -93,7 +93,7 @@ export default function WritePage() {
   const [drafts,        setDrafts]        = useState<Draft[]>([]);
   const [floatPos,      setFloatPos]      = useState<{ top: number; left: number } | null>(null);
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_FORMATS);
-  const [publishData,    setPublishData]    = useState<{ title: string; content: string } | null>(null);
+  const [publishData,    setPublishData]    = useState<{ title: string; content: string; draftId: string } | null>(null);
   const [linkPromptOpen, setLinkPromptOpen] = useState(false);
   const [linkUrl,        setLinkUrl]        = useState('');
   const [charCount,      setCharCount]      = useState(0);
@@ -704,6 +704,7 @@ export default function WritePage() {
             onClick={() => setPublishData({
               title:   titleRef.current?.textContent?.trim() ?? '',
               content: editorRef.current?.innerHTML ?? '',
+              draftId,
             })}
             className="w-full py-2.5 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors"
           >
@@ -716,6 +717,7 @@ export default function WritePage() {
         <PublishModal
           title={publishData.title}
           content={publishData.content}
+          draftId={publishData.draftId}
           onClose={() => setPublishData(null)}
         />
       )}

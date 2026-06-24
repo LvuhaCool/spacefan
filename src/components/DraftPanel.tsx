@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Draft } from '../lib/storage';
+import { loadAllStatuses, saveAllStatuses, type DraftStatus } from '../lib/draftStatus';
 
 interface Props {
   drafts: Draft[];
@@ -30,8 +31,52 @@ function TrashIcon() {
   );
 }
 
+function TelegramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+      <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.96 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+    </svg>
+  );
+}
+
+function DzenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
+      <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
+      <path d="M5 12.5a7 7 0 0 1 14 0" />
+      <path d="M8 15.5a4 4 0 0 1 8 0" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" className="w-3.5 h-3.5">
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+    </svg>
+  );
+}
+
 export default function DraftPanel({ drafts, currentId, onLoad, onDelete, onNew, onClose }: Props) {
   const [confirmDraft, setConfirmDraft] = useState<Draft | null>(null);
+  const [statuses, setStatuses] = useState<Record<string, DraftStatus>>(() => loadAllStatuses());
+
+  const toggleStatus = (draftId: string, field: 'telegram' | 'dzen' | 'test') => {
+    setStatuses(prev => {
+      const current = prev[draftId] ?? { telegram: false, dzen: false, test: false };
+      let next: DraftStatus;
+      if (field === 'test') {
+        next = { telegram: false, dzen: false, test: !current.test };
+      } else {
+        const newVal = !current[field];
+        next = { ...current, [field]: newVal, test: newVal ? false : current.test };
+      }
+      const updated = { ...prev, [draftId]: next };
+      saveAllStatuses(updated);
+      return updated;
+    });
+  };
 
   const handleConfirm = () => {
     if (!confirmDraft) return;
@@ -69,30 +114,68 @@ export default function DraftPanel({ drafts, currentId, onLoad, onDelete, onNew,
               Нет сохранённых статей
             </p>
           ) : (
-            drafts.map((draft) => (
-              <div
-                key={draft.id}
-                onClick={() => onLoad(draft)}
-                className={`p-3 rounded-xl border cursor-pointer transition-colors relative ${
-                  draft.id === currentId
-                    ? 'border-stone-800 bg-stone-50'
-                    : 'border-stone-100 hover:border-stone-200 hover:bg-stone-50'
-                }`}
-              >
-                <p className="text-sm font-medium text-stone-900 truncate pr-9">
-                  {draft.title || 'Без названия'}
-                </p>
-                <p className="text-xs text-stone-400 mt-0.5">{formatDate(draft.updatedAt)}</p>
-
-                <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmDraft(draft); }}
-                  title="Удалить черновик"
-                  className="absolute top-1/2 -translate-y-1/2 right-2.5 w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            drafts.map((draft) => {
+              const st = statuses[draft.id] ?? { telegram: false, dzen: false, test: false };
+              return (
+                <div
+                  key={draft.id}
+                  className={`p-3 rounded-xl border transition-colors flex items-center gap-2 ${
+                    draft.id === currentId
+                      ? 'border-stone-800 bg-stone-50'
+                      : 'border-stone-100 hover:border-stone-200 hover:bg-stone-50'
+                  }`}
                 >
-                  <TrashIcon />
-                </button>
-              </div>
-            ))
+                  {/* Clickable title + date area */}
+                  <div
+                    className="flex-1 min-w-0 cursor-pointer"
+                    onClick={() => onLoad(draft)}
+                  >
+                    <p className="text-sm font-medium text-stone-900 truncate">
+                      {draft.title || 'Без названия'}
+                    </p>
+                    <p className="text-xs text-stone-400 mt-0.5">{formatDate(draft.updatedAt)}</p>
+                  </div>
+
+                  {/* Status icons + delete */}
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleStatus(draft.id, 'telegram'); }}
+                      title="Опубликовано в Telegram"
+                      className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+                        st.telegram ? 'text-[#2CA5E0]' : 'text-stone-300 hover:text-stone-500'
+                      }`}
+                    >
+                      <TelegramIcon />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleStatus(draft.id, 'dzen'); }}
+                      title="Опубликовано в Дзен"
+                      className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+                        st.dzen ? 'text-orange-500' : 'text-stone-300 hover:text-stone-500'
+                      }`}
+                    >
+                      <DzenIcon />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleStatus(draft.id, 'test'); }}
+                      title="Тестовая статья"
+                      className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+                        st.test ? 'text-amber-500' : 'text-stone-300 hover:text-stone-500'
+                      }`}
+                    >
+                      <GearIcon />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmDraft(draft); }}
+                      title="Удалить черновик"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>

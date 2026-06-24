@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { getDraftStatus, setDraftStatusItem } from '../lib/draftStatus';
 
 interface Image {
   src: string;
@@ -9,6 +10,7 @@ interface Props {
   title: string;
   content: string;
   onClose: () => void;
+  draftId?: string;
 }
 
 function parseContent(html: string): { bodyHtml: string; images: Image[] } {
@@ -27,7 +29,6 @@ function transformForTelegram(title: string, bodyHtml: string): string {
   const doc  = new DOMParser().parseFromString(bodyHtml, 'text/html');
   const body = doc.body;
 
-  // ol → numbered plain paragraphs
   body.querySelectorAll('ol').forEach((ol) => {
     const frag = doc.createDocumentFragment();
     ol.querySelectorAll('li').forEach((li, i) => {
@@ -38,7 +39,6 @@ function transformForTelegram(title: string, bodyHtml: string): string {
     ol.replaceWith(frag);
   });
 
-  // ul → bullet plain paragraphs
   body.querySelectorAll('ul').forEach((ul) => {
     const frag = doc.createDocumentFragment();
     ul.querySelectorAll('li').forEach((li) => {
@@ -49,7 +49,6 @@ function transformForTelegram(title: string, bodyHtml: string): string {
     ul.replaceWith(frag);
   });
 
-  // h2 / h3 → bold paragraph
   body.querySelectorAll('h2, h3').forEach((h) => {
     const p      = doc.createElement('p');
     const strong = doc.createElement('strong');
@@ -58,7 +57,6 @@ function transformForTelegram(title: string, bodyHtml: string): string {
     h.replaceWith(p);
   });
 
-  // blockquote → italic paragraph
   body.querySelectorAll('blockquote').forEach((bq) => {
     const p  = doc.createElement('p');
     const em = doc.createElement('em');
@@ -67,7 +65,6 @@ function transformForTelegram(title: string, bodyHtml: string): string {
     bq.replaceWith(p);
   });
 
-  // Strip trailing empty / whitespace-only nodes
   while (body.lastChild) {
     const node = body.lastChild;
     const text = node.textContent?.trim() ?? '';
@@ -81,7 +78,6 @@ function transformForTelegram(title: string, bodyHtml: string): string {
     }
   }
 
-  // Prepend bold title + blank spacer line
   if (title) {
     const spacer = doc.createElement('p');
     spacer.innerHTML = '<br>';
@@ -119,7 +115,6 @@ function toTelegramHtml(el: HTMLElement): string {
       }
       case 'br': return '\n';
       case 'p': {
-        // Empty paragraph (just a br or whitespace) = blank line
         const trimmed = inner.replace(/\n/g, '').trim();
         return trimmed ? trimmed + '\n' : '\n';
       }
@@ -129,28 +124,84 @@ function toTelegramHtml(el: HTMLElement): string {
   return Array.from(el.childNodes).map(walk).join('').trim();
 }
 
-export default function PublishModal({ title, content, onClose }: Props) {
+function ImageGallery({
+  images,
+  onLightbox,
+}: {
+  images: Image[];
+  onLightbox: (i: number) => void;
+}) {
+  if (images.length === 0) return null;
+  return (
+    <div className="pt-4">
+      <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-2">
+        Медиа · {images.length}
+      </p>
+      <div className={`grid gap-1.5 ${
+        images.length === 1 ? 'grid-cols-1' :
+        images.length === 2 ? 'grid-cols-2' :
+        'grid-cols-3'
+      }`}>
+        {images.map((img, i) => (
+          <button
+            key={i}
+            onClick={() => onLightbox(i)}
+            className="aspect-square rounded-xl overflow-hidden bg-stone-100 hover:opacity-90 active:opacity-75 transition-opacity"
+          >
+            <img
+              src={img.src}
+              alt={img.caption || `Фото ${i + 1}`}
+              className="w-full h-full object-cover"
+            />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function PublishModal({ title, content, onClose, draftId }: Props) {
   const [tab,          setTab]          = useState<'telegram' | 'dzen'>('telegram');
   const [lightboxIdx,  setLightboxIdx]  = useState<number | null>(null);
+
   const [publishState, setPublishState] = useState<PublishState>('idle');
   const [errorMsg,     setErrorMsg]     = useState('');
   const [charCount,    setCharCount]    = useState(0);
 
-  const bodyEditRef = useRef<HTMLDivElement>(null);
+  const [dzenPublishState, setDzenPublishState] = useState<PublishState>('idle');
+  const [dzenErrorMsg,     setDzenErrorMsg]     = useState('');
+  const [dzenCharCount,    setDzenCharCount]    = useState(0);
+
+  const bodyEditRef  = useRef<HTMLDivElement>(null);
+  const dzenTitleRef = useRef<HTMLDivElement>(null);
+  const dzenBodyRef  = useRef<HTMLDivElement>(null);
 
   const { bodyHtml, images } = parseContent(content);
 
-  // Set transformed content once on mount
   useEffect(() => {
     if (bodyEditRef.current) {
       bodyEditRef.current.innerHTML = transformForTelegram(title, bodyHtml);
       setCharCount(bodyEditRef.current.textContent?.length ?? 0);
     }
+    if (dzenTitleRef.current) {
+      dzenTitleRef.current.textContent = title;
+    }
+    if (dzenBodyRef.current) {
+      dzenBodyRef.current.innerHTML = bodyHtml;
+      setDzenCharCount((title?.length ?? 0) + (dzenBodyRef.current.textContent?.length ?? 0));
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const updateDzenCharCount = useCallback(() => {
+    setDzenCharCount(
+      (dzenTitleRef.current?.textContent?.length ?? 0) +
+      (dzenBodyRef.current?.textContent?.length ?? 0)
+    );
+  }, []);
+
   const handlePublish = useCallback(async () => {
-    if (tab === 'dzen' || publishState === 'sending') return;
+    if (tab !== 'telegram' || publishState === 'sending') return;
     if (!bodyEditRef.current) return;
 
     const text = toTelegramHtml(bodyEditRef.current);
@@ -166,14 +217,36 @@ export default function PublishModal({ title, content, onClose }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Ошибка сервера');
       setPublishState('sent');
+      if (draftId) {
+        const st = getDraftStatus(draftId);
+        setDraftStatusItem(draftId, { ...st, telegram: true, test: false });
+      }
       setTimeout(() => setPublishState('idle'), 3000);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Неизвестная ошибка');
       setPublishState('error');
     }
-  }, [tab, publishState, images]);
+  }, [tab, publishState, images, draftId]);
 
-  // Lock scroll + Escape handler
+  const handleDzenPublish = useCallback(async () => {
+    if (tab !== 'dzen' || dzenPublishState === 'sending') return;
+    setDzenPublishState('sending');
+    setDzenErrorMsg('');
+    try {
+      // RSS integration pending — marks status locally for now
+      await new Promise(r => setTimeout(r, 300));
+      setDzenPublishState('sent');
+      if (draftId) {
+        const st = getDraftStatus(draftId);
+        setDraftStatusItem(draftId, { ...st, dzen: true, test: false });
+      }
+      setTimeout(() => setDzenPublishState('idle'), 3000);
+    } catch (err) {
+      setDzenErrorMsg(err instanceof Error ? err.message : 'Неизвестная ошибка');
+      setDzenPublishState('error');
+    }
+  }, [tab, dzenPublishState, draftId]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -188,6 +261,11 @@ export default function PublishModal({ title, content, onClose }: Props) {
       document.body.style.overflow = '';
     };
   }, [lightboxIdx, onClose]);
+
+  const activePublishState = tab === 'telegram' ? publishState : dzenPublishState;
+  const activeErrorMsg     = tab === 'telegram' ? errorMsg : dzenErrorMsg;
+  const activeCharCount    = tab === 'telegram' ? charCount : dzenCharCount;
+  const showCharLimit      = tab === 'telegram' && images.length > 0;
 
   return (
     <>
@@ -223,7 +301,7 @@ export default function PublishModal({ title, content, onClose }: Props) {
           </div>
         </div>
 
-        {/* Scrollable content — both tabs always mounted, hidden via CSS to preserve edits */}
+        {/* Scrollable content — both tabs always mounted to preserve edits */}
         <div className="flex-1 overflow-y-auto">
 
           {/* Telegram tab */}
@@ -245,40 +323,32 @@ export default function PublishModal({ title, content, onClose }: Props) {
                   empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300
                 "
               />
-
-              {images.length > 0 && (
-                <div className="pt-4">
-                  <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-2">
-                    Медиа · {images.length}
-                  </p>
-                  <div className={`grid gap-1.5 ${
-                    images.length === 1 ? 'grid-cols-1' :
-                    images.length === 2 ? 'grid-cols-2' :
-                    'grid-cols-3'
-                  }`}>
-                    {images.map((img, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setLightboxIdx(i)}
-                        className="aspect-square rounded-xl overflow-hidden bg-stone-100 hover:opacity-90 active:opacity-75 transition-opacity"
-                      >
-                        <img
-                          src={img.src}
-                          alt={img.caption || `Фото ${i + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <ImageGallery images={images} onLightbox={setLightboxIdx} />
             </div>
           </div>
 
           {/* Dzen tab */}
           <div className={tab === 'dzen' ? '' : 'hidden'}>
-            <div className="flex items-center justify-center h-48">
-              <p className="text-stone-400 font-medium text-sm">Пока что не работает!</p>
+            <div className="max-w-3xl mx-auto px-6 py-6">
+              {/* Title — separate heading like WritePage */}
+              <div
+                ref={dzenTitleRef}
+                contentEditable
+                suppressContentEditableWarning
+                data-placeholder="Заголовок"
+                onInput={updateDzenCharCount}
+                className="w-full text-3xl sm:text-4xl font-bold text-stone-900 outline-none bg-transparent mb-6 leading-tight empty:before:content-[attr(data-placeholder)] empty:before:text-stone-200 empty:before:pointer-events-none"
+              />
+              {/* Body — full HTML formatting preserved */}
+              <div
+                ref={dzenBodyRef}
+                contentEditable
+                suppressContentEditableWarning
+                data-placeholder="Текст статьи…"
+                onInput={updateDzenCharCount}
+                className="write-editor outline-none text-[15px] text-stone-800 leading-relaxed min-h-[4rem] empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300 empty:before:pointer-events-none"
+              />
+              <ImageGallery images={images} onLightbox={setLightboxIdx} />
             </div>
           </div>
 
@@ -287,27 +357,31 @@ export default function PublishModal({ title, content, onClose }: Props) {
         {/* Bottom publish button */}
         <div className="flex-shrink-0 px-6 pb-6 pt-3 border-t border-stone-100">
           <div className="flex justify-end mb-1.5">
-            <span className={`text-xs tabular-nums ${images.length > 0 && charCount > 1024 ? 'text-red-400 font-medium' : 'text-stone-300'}`}>
-              {charCount.toLocaleString()}{images.length > 0 ? ' / 1024' : ' симв.'}
+            <span className={`text-xs tabular-nums ${
+              showCharLimit && activeCharCount > 1024
+                ? 'text-red-400 font-medium'
+                : 'text-stone-300'
+            }`}>
+              {activeCharCount.toLocaleString()}{showCharLimit ? ' / 1024' : ' симв.'}
             </span>
           </div>
-          {publishState === 'error' && (
-            <p className="text-xs text-red-500 text-center mb-2">{errorMsg}</p>
+          {activePublishState === 'error' && (
+            <p className="text-xs text-red-500 text-center mb-2">{activeErrorMsg}</p>
           )}
           <button
-            onClick={handlePublish}
-            disabled={tab === 'dzen' || publishState === 'sending'}
+            onClick={tab === 'telegram' ? handlePublish : handleDzenPublish}
+            disabled={activePublishState === 'sending'}
             className={`w-full max-w-3xl mx-auto block py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
-              publishState === 'sent'
+              activePublishState === 'sent'
                 ? 'bg-green-600 text-white'
-                : publishState === 'error'
+                : activePublishState === 'error'
                 ? 'bg-red-600 text-white hover:bg-red-700'
                 : 'bg-stone-900 text-white hover:bg-stone-800'
             }`}
           >
-            {publishState === 'sending' ? 'Отправляем…'
-              : publishState === 'sent'  ? 'Отправлено ✓'
-              : publishState === 'error' ? 'Попробовать снова'
+            {activePublishState === 'sending' ? 'Отправляем…'
+              : activePublishState === 'sent'  ? 'Отправлено ✓'
+              : activePublishState === 'error' ? 'Попробовать снова'
               : 'Опубликовать'}
           </button>
         </div>
