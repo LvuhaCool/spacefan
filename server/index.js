@@ -186,6 +186,26 @@ app.post('/api/publish/telegram', async (req, res) => {
   }
 });
 
+// ── Dzen publishing ───────────────────────────────────────────────────
+
+app.post('/api/publish/dzen', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { draftId, title, bodyHtml } = req.body ?? {};
+  if (!draftId) return res.status(400).json({ error: 'Missing draftId' });
+
+  db.prepare(`
+    INSERT INTO dzen_published (id, title, body_html, published_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title        = excluded.title,
+      body_html    = excluded.body_html,
+      published_at = excluded.published_at
+  `).run(draftId, title ?? '', bodyHtml ?? '', Date.now());
+
+  return res.json({ ok: true });
+});
+
 // ── Serve built frontend in production ────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
   const dist = join(__dirname, '../dist');

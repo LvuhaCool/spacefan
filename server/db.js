@@ -77,6 +77,13 @@ db.exec(`
     updated_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS dzen_published (
+    id           TEXT    PRIMARY KEY,
+    title        TEXT    NOT NULL DEFAULT '',
+    body_html    TEXT    NOT NULL DEFAULT '',
+    published_at INTEGER NOT NULL
+  );
 `);
 
 // ── Migrations for existing installs ──────────────────────────────────

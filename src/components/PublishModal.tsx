@@ -230,11 +230,21 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
 
   const handleDzenPublish = useCallback(async () => {
     if (tab !== 'dzen' || dzenPublishState === 'sending') return;
+    if (!dzenBodyRef.current) return;
     setDzenPublishState('sending');
     setDzenErrorMsg('');
     try {
-      // RSS integration pending — marks status locally for now
-      await new Promise(r => setTimeout(r, 300));
+      const res = await fetch('/api/publish/dzen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draftId,
+          title:    dzenTitleRef.current?.textContent?.trim() ?? '',
+          bodyHtml: dzenBodyRef.current.innerHTML,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Ошибка сервера');
       setDzenPublishState('sent');
       if (draftId) {
         const st = getDraftStatus(draftId);
