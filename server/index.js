@@ -206,6 +206,42 @@ app.post('/api/publish/dzen', (req, res) => {
   return res.json({ ok: true });
 });
 
+// ── RSS feed for Yandex Dzen ──────────────────────────────────────────
+
+app.get('/rss.xml', (req, res) => {
+  const siteUrl = `${req.protocol}://${req.get('host')}`;
+  const channelTitle = process.env.CHANNEL_TITLE ?? 'Космоголик';
+  const channelDesc  = process.env.CHANNEL_DESC  ?? 'Статьи о космосе';
+
+  const rows = db.prepare(
+    'SELECT id, title, body_html, published_at FROM dzen_published ORDER BY published_at DESC LIMIT 100'
+  ).all();
+
+  const esc = (s) => s.replace(/]]>/g, ']]]]><![CDATA[>');
+
+  const items = rows.map(r => `
+    <item>
+      <title><![CDATA[${esc(r.title)}]]></title>
+      <link>${siteUrl}/articles/${r.id}</link>
+      <guid isPermaLink="false">${siteUrl}/articles/${r.id}</guid>
+      <pubDate>${new Date(r.published_at).toUTCString()}</pubDate>
+      <content:encoded><![CDATA[${esc(r.body_html)}]]></content:encoded>
+    </item>`).join('');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>${channelTitle}</title>
+    <link>${siteUrl}</link>
+    <description>${channelDesc}</description>
+    <language>ru</language>${items}
+  </channel>
+</rss>`;
+
+  res.set('Content-Type', 'application/rss+xml; charset=utf-8');
+  res.send(xml);
+});
+
 // ── Serve built frontend in production ────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
   const dist = join(__dirname, '../dist');
