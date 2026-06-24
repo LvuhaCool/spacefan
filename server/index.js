@@ -243,7 +243,7 @@ app.post('/api/publish/dzen', (req, res) => {
 app.get('/rss.xml', (req, res) => {
   const siteUrl = `${req.protocol}://${req.get('host')}`;
   const channelTitle = process.env.CHANNEL_TITLE ?? 'Космоголик';
-  const channelDesc  = process.env.CHANNEL_DESC  ?? 'Статьи о космосе';
+  const channelDesc  = process.env.CHANNEL_DESC  ?? 'Актуальные новости из мира космоса для его истинных фанатов. 🚀';
 
   const rows = db.prepare(
     'SELECT id, title, body_html, published_at FROM dzen_published ORDER BY published_at DESC LIMIT 100'
