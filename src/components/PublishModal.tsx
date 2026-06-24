@@ -187,7 +187,8 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
       dzenTitleRef.current.textContent = title;
     }
     if (dzenBodyRef.current) {
-      dzenBodyRef.current.innerHTML = bodyHtml;
+      // Use original content (includes image blocks) — server strips base64 and hosts images on publish
+      dzenBodyRef.current.innerHTML = content;
       setDzenCharCount((title?.length ?? 0) + (dzenBodyRef.current.textContent?.length ?? 0));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -358,7 +359,6 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                 onInput={updateDzenCharCount}
                 className="write-editor outline-none text-[15px] text-stone-800 leading-relaxed min-h-[4rem] empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300 empty:before:pointer-events-none"
               />
-              <ImageGallery images={images} onLightbox={setLightboxIdx} />
             </div>
           </div>
 

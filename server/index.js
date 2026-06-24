@@ -3,6 +3,8 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { writeFileSync, mkdirSync } from 'fs';
+import { randomUUID } from 'crypto';
 import authRouter from './auth.js';
 import db from './db.js';
 import { startNewsJob, refreshFeed } from './newsJob.js';
@@ -11,11 +13,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app  = express();
 const PORT = process.env.PORT ?? 3001;
 
+// Persistent uploads dir — same volume as the SQLite DB
+const uploadsDir = process.env.DATA_DIR
+  ? join(process.env.DATA_DIR, 'uploads')
+  : join(__dirname, 'uploads');
+mkdirSync(uploadsDir, { recursive: true });
+
 // Trust Railway's proxy so req.ip is the real client IP
 app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
+
+// ── Uploaded images (served from persistent volume) ───────────────────
+app.use('/uploads', express.static(uploadsDir));
 
 // ── API ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
@@ -194,6 +205,27 @@ app.post('/api/publish/dzen', (req, res) => {
   const { draftId, title, bodyHtml } = req.body ?? {};
   if (!draftId) return res.status(400).json({ error: 'Missing draftId' });
 
+  const siteUrl = `${req.protocol}://${req.get('host')}`;
+
+  // Extract base64 images, save to disk, replace with hosted URLs
+  const imgRe = /src="data:image\/(jpeg|png|gif|webp|jpg);base64,([A-Za-z0-9+/=]+)"/g;
+  const replacements = [];
+  let m;
+  while ((m = imgRe.exec(bodyHtml ?? '')) !== null) {
+    const [matched, ext, b64] = m;
+    const filename = `${randomUUID()}.${ext === 'jpeg' ? 'jpg' : ext}`;
+    try {
+      writeFileSync(join(uploadsDir, filename), Buffer.from(b64, 'base64'));
+      replacements.push([matched, `src="${siteUrl}/uploads/${filename}"`]);
+    } catch (e) {
+      console.error('[dzen] image upload error:', e.message);
+    }
+  }
+
+  // Also strip drag-handle divs left over from the editor
+  let cleanHtml = (bodyHtml ?? '').replace(/<div[^>]+class="drag-handle"[^>]*>[\s\S]*?<\/div>/g, '');
+  for (const [from, to] of replacements) cleanHtml = cleanHtml.replace(from, to);
+
   db.prepare(`
     INSERT INTO dzen_published (id, title, body_html, published_at)
     VALUES (?, ?, ?, ?)
@@ -201,7 +233,7 @@ app.post('/api/publish/dzen', (req, res) => {
       title        = excluded.title,
       body_html    = excluded.body_html,
       published_at = excluded.published_at
-  `).run(draftId, title ?? '', bodyHtml ?? '', Date.now());
+  `).run(draftId, title ?? '', cleanHtml, Date.now());
 
   return res.json({ ok: true });
 });
