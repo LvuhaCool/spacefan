@@ -169,6 +169,7 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
   const [dzenPosted,    setDzenPosted]    = useState(false);
   const [dzenError,     setDzenError]     = useState('');
   const [dzenCharCount, setDzenCharCount] = useState(0);
+  const [dzenCopied,    setDzenCopied]    = useState(false);
 
   const bodyEditRef  = useRef<HTMLDivElement>(null);
   const dzenTitleRef = useRef<HTMLDivElement>(null);
@@ -229,6 +230,26 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
       setTgSending(false);
     }
   }, [tgPosted, tgSending, images, draftId]);
+
+  const handleCopyForDzen = useCallback(async () => {
+    const titleText = dzenTitleRef.current?.textContent?.trim() ?? '';
+    // Strip base64 images — too large for clipboard and won't render in Дзен's mobile editor
+    const cleanBody = (dzenBodyRef.current?.innerHTML ?? '').replace(/src="data:[^"]+"/g, 'src=""');
+    const html  = `<h1>${titleText}</h1>${cleanBody}`;
+    const plain = `${titleText}\n\n${dzenBodyRef.current?.textContent ?? ''}`;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html':  new Blob([html],  { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' }),
+        }),
+      ]);
+    } catch {
+      await navigator.clipboard.writeText(plain);
+    }
+    setDzenCopied(true);
+    setTimeout(() => setDzenCopied(false), 2000);
+  }, []);
 
   const handleDzenPublish = useCallback(async () => {
     if (dzenPosted || dzenSending || !dzenBodyRef.current) return;
@@ -388,7 +409,7 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
             </div>
 
             {/* Bottom publish button */}
-            <div className="flex-shrink-0 px-6 pb-6 pt-3 border-t border-stone-100">
+            <div className="flex-shrink-0 px-6 pb-6 pt-3 border-t border-stone-100 max-w-3xl mx-auto w-full">
               {!curPosted && (
                 <div className="flex justify-end mb-1.5">
                   <span className={`text-xs tabular-nums ${
@@ -401,20 +422,34 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
               {curError && (
                 <p className="text-xs text-red-500 text-center mb-2">{curError}</p>
               )}
-              <button
-                onClick={tab === 'telegram' ? handlePublish : handleDzenPublish}
-                disabled={curPosted || curSending}
-                className={`w-full max-w-3xl mx-auto block py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
-                  curPosted  ? 'bg-green-600 text-white' :
-                  curError   ? 'bg-red-600 text-white hover:bg-red-700' :
-                               'bg-stone-900 text-white hover:bg-stone-800'
-                }`}
-              >
-                {curPosted  ? 'Опубликовано ✓' :
-                 curSending ? 'Отправляем…' :
-                 curError   ? 'Попробовать снова' :
-                              'Опубликовать'}
-              </button>
+              <div className={`flex gap-2 ${tab === 'dzen' && !dzenPosted ? '' : ''}`}>
+                {tab === 'dzen' && !dzenPosted && (
+                  <button
+                    onClick={handleCopyForDzen}
+                    className={`flex-none py-2.5 px-4 rounded-xl text-sm font-medium border transition-colors ${
+                      dzenCopied
+                        ? 'border-green-200 bg-green-50 text-green-700'
+                        : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+                    }`}
+                  >
+                    {dzenCopied ? '✓ Скопировано' : 'Скопировать'}
+                  </button>
+                )}
+                <button
+                  onClick={tab === 'telegram' ? handlePublish : handleDzenPublish}
+                  disabled={curPosted || curSending}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
+                    curPosted  ? 'bg-green-600 text-white' :
+                    curError   ? 'bg-red-600 text-white hover:bg-red-700' :
+                                 'bg-stone-900 text-white hover:bg-stone-800'
+                  }`}
+                >
+                  {curPosted  ? 'Опубликовано ✓' :
+                   curSending ? 'Отправляем…' :
+                   curError   ? 'Попробовать снова' :
+                                'Опубликовать'}
+                </button>
+              </div>
             </div>
           </>
         )}
