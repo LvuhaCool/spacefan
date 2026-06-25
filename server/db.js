@@ -84,6 +84,13 @@ db.exec(`
     body_html    TEXT    NOT NULL DEFAULT '',
     published_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS notes (
+    id         TEXT    PRIMARY KEY,
+    text       TEXT    NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 // ── Migrations for existing installs ──────────────────────────────────

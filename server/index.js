@@ -197,6 +197,39 @@ app.post('/api/publish/telegram', async (req, res) => {
   }
 });
 
+// ── Notes ─────────────────────────────────────────────────────────────
+
+app.get('/api/notes', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const rows = db.prepare('SELECT * FROM notes ORDER BY updated_at DESC').all();
+  return res.json(rows.map(r => ({
+    id:        r.id,
+    text:      r.text,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  })));
+});
+
+app.post('/api/notes', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const { id, text, createdAt, updatedAt } = req.body ?? {};
+  if (!id) return res.status(400).json({ error: 'Missing id' });
+  db.prepare(`
+    INSERT INTO notes (id, text, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      text       = excluded.text,
+      updated_at = excluded.updated_at
+  `).run(id, text ?? '', createdAt ?? Date.now(), updatedAt ?? Date.now());
+  return res.json({ ok: true });
+});
+
+app.delete('/api/notes/:id', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+  db.prepare('DELETE FROM notes WHERE id = ?').run(req.params.id);
+  return res.json({ ok: true });
+});
+
 // ── Dzen publishing ───────────────────────────────────────────────────
 
 app.post('/api/publish/dzen', (req, res) => {
