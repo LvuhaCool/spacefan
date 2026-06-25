@@ -3,6 +3,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Header from './components/Header';
 import NewsPage from './pages/NewsPage';
 import WritePage from './pages/WritePage';
+import NotesPage from './pages/NotesPage';
+import StarbasePage from './pages/StarbasePage';
 import LoginPage from './pages/LoginPage';
 
 function AppShell() {
@@ -24,6 +26,8 @@ function AppShell() {
       <Routes>
         <Route path="/" element={<NewsPage />} />
         <Route path="/write" element={<WritePage />} />
+        <Route path="/notes" element={<NotesPage />} />
+        <Route path="/starbase" element={<StarbasePage />} />
       </Routes>
     </div>
   );
