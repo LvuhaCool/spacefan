@@ -8,31 +8,30 @@ export interface Draft {
 
 const LEGACY_KEY = 'spacefan_drafts';
 
-export async function getDrafts(): Promise<Draft[]> {
+export async function getDrafts(): Promise<Omit<Draft, 'content'>[]> {
   try {
     const res = await fetch('/api/drafts');
     if (!res.ok) return [];
-    const serverDrafts: Draft[] = await res.json();
-
-    // One-time migration: if server is empty but localStorage still has drafts, upload them
-    if (serverDrafts.length === 0) {
-      const raw = localStorage.getItem(LEGACY_KEY);
-      if (raw) {
-        try {
-          const local: Draft[] = JSON.parse(raw);
-          if (local.length > 0) {
-            await Promise.all(local.map(saveDraft));
-            localStorage.removeItem(LEGACY_KEY);
-            return local;
-          }
-        } catch { /* malformed, ignore */ }
-      }
-    }
-
-    return serverDrafts;
+    return await res.json();
   } catch {
-    // Server unreachable — fall back to localStorage so the page isn't broken offline
-    try { return JSON.parse(localStorage.getItem(LEGACY_KEY) ?? '[]'); } catch { return []; }
+    try {
+      const local: Draft[] = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? '[]');
+      return local.map(({ content: _c, ...rest }) => rest);
+    } catch { return []; }
+  }
+}
+
+export async function getDraft(id: string): Promise<Draft | null> {
+  try {
+    const res = await fetch(`/api/drafts/${id}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    // Legacy localStorage fallback
+    try {
+      const local: Draft[] = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? '[]');
+      return local.find(d => d.id === id) ?? null;
+    } catch { return null; }
   }
 }
 

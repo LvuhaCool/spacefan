@@ -3,9 +3,9 @@ import type { Draft } from '../lib/storage';
 import { loadAllStatuses, saveAllStatuses, type DraftStatus } from '../lib/draftStatus';
 
 interface Props {
-  drafts: Draft[];
+  drafts: Omit<Draft, 'content'>[];
   currentId: string;
-  onLoad: (draft: Draft) => void;
+  onLoad: (draft: Omit<Draft, 'content'>) => void;
   onDelete: (id: string) => void;
   onNew: () => void;
   onClose: () => void;
@@ -59,7 +59,7 @@ function GearIcon() {
 }
 
 export default function DraftPanel({ drafts, currentId, onLoad, onDelete, onNew, onClose }: Props) {
-  const [confirmDraft, setConfirmDraft] = useState<Draft | null>(null);
+  const [confirmDraft, setConfirmDraft] = useState<Omit<Draft, 'content'> | null>(null);
   const [statuses, setStatuses] = useState<Record<string, DraftStatus>>(() => loadAllStatuses());
 
   const toggleStatus = (draftId: string, field: 'telegram' | 'dzen' | 'test') => {

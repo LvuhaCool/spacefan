@@ -39,7 +39,7 @@ function getSession(req) {
 }
 
 app.get('/api/news', (_req, res) => {
-  const rows = db.prepare('SELECT * FROM news_feed ORDER BY sfn_id DESC').all();
+  const rows = db.prepare('SELECT * FROM news_feed ORDER BY sfn_id DESC LIMIT 100').all();
   res.json(rows.map(r => ({
     id:        r.id,
     title:     r.title,
@@ -103,14 +103,27 @@ app.post('/api/news/refresh', (_req, res) => {
 
 app.get('/api/drafts', (req, res) => {
   if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
-  const rows = db.prepare('SELECT * FROM drafts ORDER BY updated_at DESC').all();
+  // Intentionally excludes `content` — full content is only needed when opening a specific draft
+  const rows = db.prepare('SELECT id, title, updated_at, created_at FROM drafts ORDER BY updated_at DESC').all();
   return res.json(rows.map(r => ({
     id:        r.id,
     title:     r.title,
-    content:   r.content,
     updatedAt: r.updated_at,
     createdAt: r.created_at,
   })));
+});
+
+app.get('/api/drafts/:id', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const row = db.prepare('SELECT * FROM drafts WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  return res.json({
+    id:        row.id,
+    title:     row.title,
+    content:   row.content,
+    updatedAt: row.updated_at,
+    createdAt: row.created_at,
+  });
 });
 
 app.post('/api/drafts', (req, res) => {

@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DraftPanel from '../components/DraftPanel';
 import PublishModal from '../components/PublishModal';
-import { saveDraft, getDrafts, deleteDraft } from '../lib/storage';
+import { saveDraft, getDrafts, getDraft, deleteDraft } from '../lib/storage';
 import type { Draft } from '../lib/storage';
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
@@ -90,7 +90,7 @@ export default function WritePage() {
   const [draftId,       setDraftId]       = useState<string>(() => crypto.randomUUID());
   const [saveStatus,    setSaveStatus]    = useState<SaveStatus>('saved');
   const [panelOpen,     setPanelOpen]     = useState(false);
-  const [drafts,        setDrafts]        = useState<Draft[]>([]);
+  const [drafts,        setDrafts]        = useState<Omit<Draft, 'content'>[]>([]);
   const [floatPos,      setFloatPos]      = useState<{ top: number; left: number } | null>(null);
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_FORMATS);
   const [publishData,    setPublishData]    = useState<{ title: string; content: string; draftId: string } | null>(null);
@@ -248,12 +248,14 @@ export default function WritePage() {
   }, [location.state, navigate]);
 
   // ── Draft management ─────────────────────────────────────────
-  const loadDraft = useCallback((draft: Draft) => {
+  const loadDraft = useCallback(async (draft: Omit<Draft, 'content'>) => {
+    const full = await getDraft(draft.id);
+    if (!full) return;
     skipObserverRef.current = true;
-    setDraftId(draft.id);
-    createdAtRef.current = draft.createdAt;
-    if (titleRef.current)  titleRef.current.textContent  = draft.title === 'Без названия' ? '' : draft.title;
-    if (editorRef.current) editorRef.current.innerHTML   = draft.content;
+    setDraftId(full.id);
+    createdAtRef.current = full.createdAt;
+    if (titleRef.current)  titleRef.current.textContent  = full.title === 'Без названия' ? '' : full.title;
+    if (editorRef.current) editorRef.current.innerHTML   = full.content;
     setPanelOpen(false);
     setSaveStatus('saved');
     setTimeout(() => {

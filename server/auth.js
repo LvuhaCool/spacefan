@@ -56,7 +56,7 @@ router.post('/login', async (req, res) => {
     });
   }
 
-  const valid = bcrypt.compareSync(password, process.env.PASSWORD_HASH ?? '');
+  const valid = await bcrypt.compare(password, process.env.PASSWORD_HASH ?? '');
   if (!valid) {
     recordFailedAttempt(ip);
     const used = (lockout.attemptsUsed ?? 0) + 1;
@@ -70,7 +70,7 @@ router.post('/login', async (req, res) => {
   // Password OK — generate OTP
   db.prepare('DELETE FROM otp_codes').run();
   const code = String(Math.floor(100_000 + Math.random() * 900_000));
-  const hashed = bcrypt.hashSync(code, 8);
+  const hashed = await bcrypt.hash(code, 8);
   db.prepare('INSERT INTO otp_codes (code, expires_at) VALUES (?, ?)').run(hashed, Date.now() + OTP_EXPIRY_MS);
 
   try {
@@ -104,7 +104,7 @@ router.post('/verify', (req, res) => {
     return res.status(401).json({ error: 'Код истёк. Войдите снова.' });
   }
 
-  if (!bcrypt.compareSync(String(code), row.code)) {
+  if (!await bcrypt.compare(String(code), row.code)) {
     return res.status(401).json({ error: 'Неверный код.' });
   }
 
