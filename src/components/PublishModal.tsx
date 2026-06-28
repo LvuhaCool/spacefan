@@ -120,6 +120,7 @@ function toTelegramHtml(el: HTMLElement): string {
       case 'i': case 'em':     return `<i>${inner}</i>`;
       case 'u':                return `<u>${inner}</u>`;
       case 's': case 'del': case 'strike': return `<s>${inner}</s>`;
+      case 'h2': case 'h3': return `<b>${inner}</b>\n`;
       case 'a': {
         const href = (e as HTMLAnchorElement).href;
         return href ? `<a href="${href}">${inner}</a>` : inner;
@@ -133,6 +134,141 @@ function toTelegramHtml(el: HTMLElement): string {
     }
   }
   return Array.from(el.childNodes).map(walk).join('').trim();
+}
+
+function FormatBar({ editorRef }: { editorRef: React.RefObject<HTMLDivElement | null> }) {
+  const [af, setAf] = useState({ bold: false, italic: false, underline: false, strikeThrough: false, blockType: '', link: false });
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkUrl,  setLinkUrl]  = useState('');
+  const savedRange = useRef<Range | null>(null);
+
+  useEffect(() => {
+    const update = () => {
+      const sel    = window.getSelection();
+      const editor = editorRef.current;
+      if (!sel || !editor || !editor.contains(sel.anchorNode)) return;
+
+      let link = false;
+      let n: Node | null = sel.anchorNode;
+      while (n && n !== editor) {
+        if ((n as HTMLElement).tagName === 'A') { link = true; break; }
+        n = n.parentNode;
+      }
+      if (link) { setAf(p => ({ ...p, link: true })); return; }
+
+      const blockType    = document.queryCommandValue('formatBlock').toLowerCase();
+      const isHeading    = blockType === 'h2' || blockType === 'h3';
+      const bold         = isHeading ? false : document.queryCommandState('bold');
+      const italic       = document.queryCommandState('italic');
+      const underline    = document.queryCommandState('underline');
+      const strikeThrough = document.queryCommandState('strikeThrough');
+      setAf({ bold, italic, underline, strikeThrough, blockType, link: false });
+    };
+    document.addEventListener('selectionchange', update);
+    return () => document.removeEventListener('selectionchange', update);
+  }, [editorRef]);
+
+  const exec = (cmd: string, val?: string) => { document.execCommand(cmd, false, val); editorRef.current?.focus(); };
+  const prevent = (e: React.MouseEvent) => e.preventDefault();
+
+  const openLink = (e: React.MouseEvent) => {
+    prevent(e);
+    if (af.link) { exec('unlink'); return; }
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) savedRange.current = sel.getRangeAt(0).cloneRange();
+    setLinkUrl('');
+    setLinkOpen(true);
+  };
+
+  const applyLink = (url: string) => {
+    setLinkOpen(false);
+    if (!url.trim()) return;
+    const r = savedRange.current;
+    if (r) { const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r); }
+    exec('createLink', /^https?:\/\//i.test(url) ? url : `https://${url}`);
+    savedRange.current = null;
+  };
+
+  const toggleCallout = (e: React.MouseEvent) => {
+    prevent(e);
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      let n: Node | null = sel.anchorNode;
+      while (n && n !== editorRef.current) {
+        if ((n as HTMLElement).tagName === 'BLOCKQUOTE') { exec('formatBlock', 'P'); return; }
+        n = n.parentNode;
+      }
+    }
+    exec('formatBlock', 'BLOCKQUOTE');
+  };
+
+  const Btn = ({ active, onMouseDown, title, children }: {
+    active?: boolean; onMouseDown: (e: React.MouseEvent) => void; title: string; children: React.ReactNode;
+  }) => (
+    <button onMouseDown={onMouseDown} title={title}
+      className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors select-none ${
+        active ? 'bg-stone-900 text-white' : 'text-stone-500 hover:bg-stone-200/60 hover:text-stone-900'
+      }`}>{children}</button>
+  );
+  const Sep = () => <div className="w-px h-5 bg-stone-100 mx-1 flex-shrink-0" />;
+
+  return (
+    <>
+      <div className="flex items-center gap-0.5 flex-wrap py-2 mb-4 border-b border-stone-100 sticky top-0 bg-white z-10">
+        <Btn active={af.bold}        onMouseDown={e => { prevent(e); exec('bold'); }}        title="Жирный"><strong className="font-bold">B</strong></Btn>
+        <Btn active={af.italic}      onMouseDown={e => { prevent(e); exec('italic'); }}      title="Курсив"><em>I</em></Btn>
+        <Btn active={af.underline}   onMouseDown={e => { prevent(e); exec('underline'); }}   title="Подчёркнутый"><span className="underline">U</span></Btn>
+        <Btn active={af.strikeThrough} onMouseDown={e => { prevent(e); exec('strikeThrough'); }} title="Зачёркнутый"><span className="line-through">S</span></Btn>
+        <Sep />
+        <Btn active={af.blockType === 'h2'} onMouseDown={e => { prevent(e); exec('formatBlock', 'H2'); }} title="Заголовок H2"><span className="text-xs font-bold">H2</span></Btn>
+        <Btn active={af.blockType === 'h3'} onMouseDown={e => { prevent(e); exec('formatBlock', 'H3'); }} title="Заголовок H3"><span className="text-xs font-bold">H3</span></Btn>
+        <Btn active={false} onMouseDown={e => { prevent(e); exec('formatBlock', 'p'); }} title="Обычный текст"><span className="text-xs">P</span></Btn>
+        <Sep />
+        <Btn active={false} onMouseDown={e => { prevent(e); exec('insertUnorderedList'); }} title="Маркированный список">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+            <circle cx="2" cy="4" r="1.5" /><rect x="5" y="3" width="9" height="2" rx="1" />
+            <circle cx="2" cy="8" r="1.5" /><rect x="5" y="7" width="9" height="2" rx="1" />
+            <circle cx="2" cy="12" r="1.5" /><rect x="5" y="11" width="9" height="2" rx="1" />
+          </svg>
+        </Btn>
+        <Btn active={false} onMouseDown={e => { prevent(e); exec('insertOrderedList'); }} title="Нумерованный список">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+            <text x="0" y="5" fontSize="5" fontFamily="monospace">1.</text><rect x="5" y="3" width="9" height="2" rx="1" />
+            <text x="0" y="9" fontSize="5" fontFamily="monospace">2.</text><rect x="5" y="7" width="9" height="2" rx="1" />
+            <text x="0" y="13" fontSize="5" fontFamily="monospace">3.</text><rect x="5" y="11" width="9" height="2" rx="1" />
+          </svg>
+        </Btn>
+        <Sep />
+        <Btn active={af.blockType === 'blockquote'} onMouseDown={toggleCallout} title="Выноска «»"><span className="text-sm font-bold leading-none">«»</span></Btn>
+        <Btn active={af.link} onMouseDown={openLink} title="Ссылка">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M6.5 9.5a3.182 3.182 0 004.5 0l2-2a3.182 3.182 0 00-4.5-4.5L7 4.5" />
+            <path d="M9.5 6.5a3.182 3.182 0 00-4.5 0l-2 2a3.182 3.182 0 004.5 4.5L9.5 11" />
+          </svg>
+        </Btn>
+      </div>
+
+      {linkOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setLinkOpen(false)} />
+          <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="text-base font-semibold text-stone-900 mb-3">Вставить ссылку</h3>
+            <input
+              autoFocus type="url" placeholder="https://…"
+              value={linkUrl}
+              onChange={e => setLinkUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') applyLink(linkUrl); if (e.key === 'Escape') setLinkOpen(false); }}
+              className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-stone-900 mb-4"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setLinkOpen(false)} className="flex-1 py-2 rounded-xl border border-stone-200 text-sm text-stone-600 hover:bg-stone-50 transition-colors">Отмена</button>
+              <button onClick={() => applyLink(linkUrl)} className="flex-1 py-2 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors">Вставить</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 function CheckCircle() {
@@ -337,6 +473,7 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                   </div>
                 ) : (
                   <div className="max-w-3xl mx-auto px-6 py-6">
+                    <FormatBar editorRef={bodyEditRef} />
                     <div
                       ref={bodyEditRef}
                       contentEditable
@@ -347,6 +484,7 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                         text-[15px] text-stone-800 leading-relaxed outline-none
                         [&_p]:mb-3 [&_p:last-child]:mb-0
                         [&_strong]:font-bold [&_em]:italic [&_u]:underline [&_s]:line-through
+                        [&_a]:text-blue-600 [&_a]:underline
                         empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300
                       "
                     />
@@ -366,6 +504,7 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                       onInput={updateDzenCharCount}
                       className="w-full text-3xl sm:text-4xl font-bold text-stone-900 outline-none bg-transparent mb-6 leading-tight empty:before:content-[attr(data-placeholder)] empty:before:text-stone-200 empty:before:pointer-events-none"
                     />
+                    <FormatBar editorRef={dzenBodyRef} />
                     <div
                       ref={dzenBodyRef}
                       contentEditable
