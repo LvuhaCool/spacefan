@@ -90,6 +90,19 @@ function transformForTelegram(title: string, bodyHtml: string): string {
     body.insertBefore(titleP, body.firstChild);
   }
 
+  // Footer: blank line + channel credit
+  const footerSpacer = doc.createElement('p');
+  footerSpacer.innerHTML = '<br>';
+  body.appendChild(footerSpacer);
+
+  const footerP = doc.createElement('p');
+  const footerLink = doc.createElement('a');
+  footerLink.href = 'http://t.me/spafic';
+  footerLink.textContent = 'Космоголик';
+  footerP.appendChild(footerLink);
+  footerP.appendChild(doc.createTextNode(' | #'));
+  body.appendChild(footerP);
+
   return body.innerHTML;
 }
 
@@ -165,9 +178,6 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
   const [tgError,    setTgError]    = useState('');
   const [charCount,  setCharCount]  = useState(0);
 
-  const [dzenSending,   setDzenSending]   = useState(false);
-  const [dzenPosted,    setDzenPosted]    = useState(false);
-  const [dzenError,     setDzenError]     = useState('');
   const [dzenCharCount, setDzenCharCount] = useState(0);
   const [dzenCopied,    setDzenCopied]    = useState(false);
 
@@ -192,12 +202,12 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Both platforms published → auto-close after 2 s
+  // Telegram published → auto-close after 2 s
   useEffect(() => {
-    if (!tgPosted || !dzenPosted) return;
+    if (!tgPosted) return;
     const t = setTimeout(onClose, 2000);
     return () => clearTimeout(t);
-  }, [tgPosted, dzenPosted, onClose]);
+  }, [tgPosted, onClose]);
 
   const updateDzenCharCount = useCallback(() => {
     setDzenCharCount(
@@ -251,33 +261,6 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
     setTimeout(() => setDzenCopied(false), 2000);
   }, []);
 
-  const handleDzenPublish = useCallback(async () => {
-    if (dzenPosted || dzenSending || !dzenBodyRef.current) return;
-    setDzenSending(true);
-    setDzenError('');
-    try {
-      const res = await fetch('/api/publish/dzen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          draftId,
-          title:    dzenTitleRef.current?.textContent?.trim() ?? '',
-          bodyHtml: dzenBodyRef.current.innerHTML,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Ошибка сервера');
-      setDzenPosted(true);
-      if (draftId) {
-        const st = getDraftStatus(draftId);
-        setDraftStatusItem(draftId, { ...st, dzen: true, test: false });
-      }
-    } catch (err) {
-      setDzenError(err instanceof Error ? err.message : 'Неизвестная ошибка');
-    } finally {
-      setDzenSending(false);
-    }
-  }, [dzenPosted, dzenSending, draftId]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -294,19 +277,14 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
     };
   }, [lightboxIdx, onClose]);
 
-  const bothPosted   = tgPosted && dzenPosted;
-  const curPosted    = tab === 'telegram' ? tgPosted  : dzenPosted;
-  const curSending   = tab === 'telegram' ? tgSending : dzenSending;
-  const curError     = tab === 'telegram' ? tgError   : dzenError;
-  const curCharCount = tab === 'telegram' ? charCount : dzenCharCount;
-  const showLimit    = tab === 'telegram' && images.length > 0;
+  const showLimit = tab === 'telegram' && images.length > 0;
 
   return (
     <>
       <div className="fixed inset-0 z-50 bg-white flex flex-col">
 
-        {bothPosted ? (
-          /* ── Both platforms done: show success then close ── */
+        {tgPosted ? (
+          /* ── Telegram published: show success then close ── */
           <div className="flex-1 flex flex-col items-center justify-center gap-5">
             <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
               <svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5"
@@ -314,7 +292,7 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <p className="text-2xl font-bold text-stone-900">Всё опубликовано!</p>
+            <p className="text-2xl font-bold text-stone-900">Опубликовано!</p>
             <p className="text-sm text-stone-400">Возвращаемся к редактору…</p>
           </div>
         ) : (
@@ -339,7 +317,7 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                         : 'text-stone-400 border-transparent hover:text-stone-700'
                     }`}>
                     {t === 'telegram' ? 'Телеграм' : 'Дзен'}
-                    {(t === 'telegram' ? tgPosted : dzenPosted) && (
+                    {t === 'telegram' && tgPosted && (
                       <span className="text-green-500 text-xs">✓</span>
                     )}
                   </button>
@@ -379,12 +357,6 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
 
               {/* Dzen tab */}
               <div className={tab === 'dzen' ? '' : 'hidden'}>
-                {dzenPosted ? (
-                  <div className="flex flex-col items-center justify-center py-24 gap-3">
-                    <CheckCircle />
-                    <p className="text-base font-semibold text-stone-700">Опубликовано в Дзен</p>
-                  </div>
-                ) : (
                   <div className="max-w-3xl mx-auto px-6 py-6">
                     <div
                       ref={dzenTitleRef}
@@ -403,27 +375,31 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                       className="write-editor outline-none text-[15px] text-stone-800 leading-relaxed min-h-[4rem] empty:before:content-[attr(data-placeholder)] empty:before:text-stone-300 empty:before:pointer-events-none"
                     />
                   </div>
-                )}
               </div>
 
             </div>
 
             {/* Bottom publish button */}
             <div className="flex-shrink-0 px-6 pb-6 pt-3 border-t border-stone-100 max-w-3xl mx-auto w-full">
-              {!curPosted && (
-                <div className="flex justify-end mb-1.5">
+              <div className="flex justify-end mb-1.5">
+                {tab === 'telegram' && !tgPosted && (
                   <span className={`text-xs tabular-nums ${
-                    showLimit && curCharCount > 1024 ? 'text-red-400 font-medium' : 'text-stone-300'
+                    showLimit && charCount > 1024 ? 'text-red-400 font-medium' : 'text-stone-300'
                   }`}>
-                    {curCharCount.toLocaleString()}{showLimit ? ' / 1024' : ' симв.'}
+                    {charCount.toLocaleString()}{showLimit ? ' / 1024' : ' симв.'}
                   </span>
-                </div>
+                )}
+                {tab === 'dzen' && (
+                  <span className="text-xs tabular-nums text-stone-300">
+                    {dzenCharCount.toLocaleString()} симв.
+                  </span>
+                )}
+              </div>
+              {tgError && tab === 'telegram' && (
+                <p className="text-xs text-red-500 text-center mb-2">{tgError}</p>
               )}
-              {curError && (
-                <p className="text-xs text-red-500 text-center mb-2">{curError}</p>
-              )}
-              <div className={`flex gap-2 ${tab === 'dzen' && !dzenPosted ? '' : ''}`}>
-                {tab === 'dzen' && !dzenPosted && (
+              <div className="flex gap-2">
+                {tab === 'dzen' && (
                   <button
                     onClick={handleCopyForDzen}
                     className={`flex-none py-2.5 px-4 rounded-xl text-sm font-medium border transition-colors ${
@@ -435,20 +411,31 @@ export default function PublishModal({ title, content, onClose, draftId }: Props
                     {dzenCopied ? '✓ Скопировано' : 'Скопировать'}
                   </button>
                 )}
-                <button
-                  onClick={tab === 'telegram' ? handlePublish : handleDzenPublish}
-                  disabled={curPosted || curSending}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
-                    curPosted  ? 'bg-green-600 text-white' :
-                    curError   ? 'bg-red-600 text-white hover:bg-red-700' :
+                {tab === 'dzen' ? (
+                  <a
+                    href="https://dzen.ru/profile/editor/spacefan"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium text-center bg-stone-900 text-white hover:bg-stone-800 transition-colors"
+                  >
+                    Опубликовать
+                  </a>
+                ) : (
+                  <button
+                    onClick={handlePublish}
+                    disabled={tgPosted || tgSending}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
+                      tgPosted ? 'bg-green-600 text-white' :
+                      tgError  ? 'bg-red-600 text-white hover:bg-red-700' :
                                  'bg-stone-900 text-white hover:bg-stone-800'
-                  }`}
-                >
-                  {curPosted  ? 'Опубликовано ✓' :
-                   curSending ? 'Отправляем…' :
-                   curError   ? 'Попробовать снова' :
-                                'Опубликовать'}
-                </button>
+                    }`}
+                  >
+                    {tgPosted  ? 'Опубликовано ✓' :
+                     tgSending ? 'Отправляем…' :
+                     tgError   ? 'Попробовать снова' :
+                                 'Опубликовать'}
+                  </button>
+                )}
               </div>
             </div>
           </>
