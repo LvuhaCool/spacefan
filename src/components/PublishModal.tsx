@@ -68,13 +68,13 @@ function transformForTelegram(title: string, bodyHtml: string): string {
   while (body.lastChild) {
     const node = body.lastChild;
     const text = node.textContent?.trim() ?? '';
-    const inner = node.nodeType === Node.ELEMENT_NODE
-      ? (node as Element).innerHTML.replace(/<br\s*\/?>/gi, '').trim()
-      : '';
-    if (text === '' || inner === '') {
-      body.removeChild(node);
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      // Text / comment node: only remove if truly empty
+      if (text === '') { body.removeChild(node); } else { break; }
     } else {
-      break;
+      // Element node: remove if it's blank (only whitespace / <br>)
+      const inner = (node as Element).innerHTML.replace(/<br\s*\/?>/gi, '').trim();
+      if (text === '' || inner === '') { body.removeChild(node); } else { break; }
     }
   }
 
