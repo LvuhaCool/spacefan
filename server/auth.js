@@ -95,7 +95,7 @@ router.post('/login', async (req, res) => {
 });
 
 // ── POST /api/auth/verify ─────────────────────────────────────────────
-router.post('/verify', (req, res) => {
+router.post('/verify', async (req, res) => {
   const { code } = req.body ?? {};
   if (!code) return res.status(400).json({ error: 'Введите код.' });
 

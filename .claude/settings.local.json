@@ -11,7 +11,9 @@
       "Bash(npx tsc *)",
       "Bash(git commit *)",
       "Bash(git pull *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(ping -c 1 github.com)",
+      "Bash(curl -s --max-time 5 https://github.com)"
     ]
   }
 }
