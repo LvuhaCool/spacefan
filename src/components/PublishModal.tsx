@@ -123,12 +123,17 @@ function toTelegramHtml(el: HTMLElement): string {
       case 'h2': case 'h3': return `<b>${inner}</b>\n`;
       case 'a': {
         const href = (e as HTMLAnchorElement).href;
-        return href ? `<a href="${href}">${inner}</a>` : inner;
+        if (!href) return inner;
+        // & in URLs must be &amp; — bare & causes Telegram's parser to stop mid-message
+        return `<a href="${href.replace(/&/g, '&amp;')}">${inner}</a>`;
       }
       case 'br': return '\n';
-      case 'p': {
-        const trimmed = inner.replace(/\n/g, '').trim();
-        return trimmed ? trimmed + '\n' : '\n';
+      case 'p':
+      case 'div': {
+        // Detect empty block (only whitespace / <br> newlines)
+        if (!inner.replace(/\n/g, '').trim()) return '\n';
+        // Preserve inline <br> newlines within the block
+        return inner.trimEnd() + '\n';
       }
       default: return inner;
     }
