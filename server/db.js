@@ -94,6 +94,11 @@ db.exec(`
 `);
 
 // ── Migrations for existing installs ──────────────────────────────────
+// Add failed_attempts to otp_codes if missing (security hardening)
+const otpColumns = db.prepare('PRAGMA table_info(otp_codes)').all().map(c => c.name);
+if (!otpColumns.includes('failed_attempts')) {
+  db.exec('ALTER TABLE otp_codes ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0');
+}
 
 const newsColumns = db.prepare('PRAGMA table_info(news_feed)').all().map(c => c.name);
 if (!newsColumns.includes('sfn_id')) {

@@ -88,13 +88,15 @@ app.get('/api/events', (_req, res) => {
 });
 
 app.delete('/api/news/:id', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
   db.prepare('DELETE FROM news_feed WHERE id = ?').run(id);
   return res.json({ ok: true });
 });
 
-app.post('/api/news/refresh', (_req, res) => {
+app.post('/api/news/refresh', (req, res) => {
+  if (!getSession(req)) return res.status(401).json({ error: 'Unauthorized' });
   refreshFeed();
   res.json({ ok: true });
 });

@@ -17,28 +17,31 @@ const OTP_EXPIRY_MS  = 10 * 60 * 1000;  // 10 minutes
 const SESSION_MS     = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // ── helpers ──────────────────────────────────────────────────────────
+// Lockout is GLOBAL (not per-IP) — IP-based lockout is trivially bypassed
+// via X-Forwarded-For spoofing. Since there is exactly one admin account,
+// a global lockout is correct: 5 failures from anywhere → 45-minute freeze.
 
-function getLockout(ip) {
+function getLockout() {
   const cutoff = Date.now() - LOCKOUT_MS;
   const { count } = db
-    .prepare('SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND attempted_at > ?')
-    .get(ip, cutoff);
+    .prepare('SELECT COUNT(*) as count FROM login_attempts WHERE attempted_at > ?')
+    .get(cutoff);
 
   if (count >= MAX_ATTEMPTS) {
     const { last } = db
-      .prepare('SELECT MAX(attempted_at) as last FROM login_attempts WHERE ip = ?')
-      .get(ip);
+      .prepare('SELECT MAX(attempted_at) as last FROM login_attempts')
+      .get();
     return { locked: true, unlockAt: last + LOCKOUT_MS };
   }
   return { locked: false, attemptsUsed: count };
 }
 
-function recordFailedAttempt(ip) {
-  db.prepare('INSERT INTO login_attempts (ip, attempted_at) VALUES (?, ?)').run(ip, Date.now());
+function recordFailedAttempt() {
+  db.prepare('INSERT INTO login_attempts (ip, attempted_at) VALUES (?, ?)').run('_', Date.now());
 }
 
-function clearAttempts(ip) {
-  db.prepare('DELETE FROM login_attempts WHERE ip = ?').run(ip);
+function clearAttempts() {
+  db.prepare('DELETE FROM login_attempts').run();
 }
 
 // ── POST /api/auth/login ──────────────────────────────────────────────
@@ -46,8 +49,7 @@ router.post('/login', async (req, res) => {
   const { password } = req.body ?? {};
   if (!password) return res.status(400).json({ error: 'Введите пароль.' });
 
-  const ip = req.ip;
-  const lockout = getLockout(ip);
+  const lockout = getLockout();
 
   if (lockout.locked) {
     const mins = Math.ceil((lockout.unlockAt - Date.now()) / 60_000);
@@ -58,7 +60,7 @@ router.post('/login', async (req, res) => {
 
   const valid = await bcrypt.compare(password, process.env.PASSWORD_HASH ?? '');
   if (!valid) {
-    recordFailedAttempt(ip);
+    recordFailedAttempt();
     const used = (lockout.attemptsUsed ?? 0) + 1;
     const left = MAX_ATTEMPTS - used;
     if (left <= 0) {
@@ -71,7 +73,7 @@ router.post('/login', async (req, res) => {
   db.prepare('DELETE FROM otp_codes').run();
   const code = String(Math.floor(100_000 + Math.random() * 900_000));
   const hashed = await bcrypt.hash(code, 8);
-  db.prepare('INSERT INTO otp_codes (code, expires_at) VALUES (?, ?)').run(hashed, Date.now() + OTP_EXPIRY_MS);
+  db.prepare('INSERT INTO otp_codes (code, expires_at, failed_attempts) VALUES (?, ?, 0)').run(hashed, Date.now() + OTP_EXPIRY_MS);
 
   try {
     await getResend().emails.send({
@@ -95,22 +97,32 @@ router.post('/login', async (req, res) => {
 });
 
 // ── POST /api/auth/verify ─────────────────────────────────────────────
+const MAX_OTP_ATTEMPTS = 3;
+
 router.post('/verify', async (req, res) => {
   const { code } = req.body ?? {};
   if (!code) return res.status(400).json({ error: 'Введите код.' });
 
-  const row = db.prepare('SELECT * FROM otp_codes WHERE expires_at > ?').get(Date.now());
+  const row = db.prepare('SELECT rowid, * FROM otp_codes WHERE expires_at > ?').get(Date.now());
   if (!row) {
     return res.status(401).json({ error: 'Код истёк. Войдите снова.' });
   }
 
+  // Too many wrong OTP guesses — kill this OTP and force re-login
+  if ((row.failed_attempts ?? 0) >= MAX_OTP_ATTEMPTS) {
+    db.prepare('DELETE FROM otp_codes').run();
+    return res.status(429).json({ error: 'Превышено число попыток. Войдите заново.' });
+  }
+
   if (!await bcrypt.compare(String(code), row.code)) {
-    return res.status(401).json({ error: 'Неверный код.' });
+    db.prepare('UPDATE otp_codes SET failed_attempts = failed_attempts + 1 WHERE rowid = ?').run(row.rowid);
+    const left = MAX_OTP_ATTEMPTS - (row.failed_attempts ?? 0) - 1;
+    return res.status(401).json({ error: `Неверный код.${left > 0 ? ` Осталось попыток: ${left}` : ''}` });
   }
 
   // Success — clear OTP and lockout, create session
   db.prepare('DELETE FROM otp_codes').run();
-  clearAttempts(req.ip);
+  clearAttempts();
 
   const sessionId  = randomBytes(32).toString('hex');
   const expiresAt  = Date.now() + SESSION_MS;
